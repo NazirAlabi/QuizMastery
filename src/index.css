@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  @apply transition-colors duration-300;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+}
+
+.boda {
+  @apply border-4 border-white;
+}
+
+html.light body {
+  background-color: #e2e8f0;
+  background-image: url('/assets/backgrounds/zig-zag-light.svg');
+  background-repeat: repeat;
+  background-size: 60px 60px;
+}
+
+html.light[data-wallpaper='prism'] body {
+  background-color: #f1f5f9;
+  background-image: url('/assets/backgrounds/subtle-prism-light.svg');
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+html.dark body {
+  background-color: #111b31;
+  background-image: url('/assets/backgrounds/zig-zag-dark.svg');
+  background-repeat: repeat;
+  background-size: 60px 60px;
+}
+
+html.dark[data-wallpaper='prism'] body {
+  background-color: #111b31;
+  background-image: url('/assets/backgrounds/subtle-prism-dark.svg');
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-attachment: fixed;
+}

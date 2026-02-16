@@ -1,0 +1,51 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "quizQuestions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "quizId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "orderIndex",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "attemptAnswers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "attemptId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "questionId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "attemptAnswers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "attemptId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "questionId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
