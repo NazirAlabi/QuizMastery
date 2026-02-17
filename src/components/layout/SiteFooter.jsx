@@ -64,8 +64,8 @@ const SiteFooter = () => {
   };
 
   return (
-    <footer className="border-t border-slate-300 bg-slate-100 mt-12 dark:border-slate-800 dark:bg-slate-950">
-      <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <footer className="border-t border-slate-300 bg-slate-100/50 backdrop-blur-xl mt-12 dark:border-slate-800/50 dark:bg-slate-950">
+      <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:flex md:items-center md:justify-center">
         <div className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{content.title}</h2>
           <p className="text-sm text-slate-600 dark:text-slate-400">{content.subtitle}</p>

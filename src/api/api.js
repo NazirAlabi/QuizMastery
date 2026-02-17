@@ -2,8 +2,9 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
+  updateProfile,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/firebase/client.js';
 import { quizRepository } from '@/repositories/quizRepository.js';
 import { questionRepository } from '@/repositories/questionRepository.js';
@@ -82,27 +83,47 @@ const saveToStorage = (key, data) => {
   localStorage.setItem(key, JSON.stringify(data));
 };
 
-const ensureUserProfile = async (firebaseUser) => {
+const ensureUserProfile = async (firebaseUser, preferredDisplayName = '') => {
   const userRef = doc(db, 'users', firebaseUser.uid);
   const existing = await getDoc(userRef);
+  const normalizedPreferredName = String(preferredDisplayName || '').trim();
+  const fallbackDisplayName =
+    normalizedPreferredName ||
+    firebaseUser.displayName ||
+    firebaseUser.email?.split('@')[0] ||
+    'Quiz User';
 
   if (!existing.exists()) {
     await setDoc(userRef, {
-      displayName:
-        firebaseUser.displayName ||
-        firebaseUser.email?.split('@')[0] ||
-        'Quiz User',
+      displayName: fallbackDisplayName,
       email: firebaseUser.email || '',
       createdAt: Timestamp.now(),
       profilePhotoUrl: firebaseUser.photoURL || null,
     });
+
+    if (normalizedPreferredName && normalizedPreferredName !== firebaseUser.displayName) {
+      await updateProfile(firebaseUser, { displayName: normalizedPreferredName });
+    }
+  } else if (normalizedPreferredName) {
+    await updateDoc(userRef, { displayName: normalizedPreferredName });
+    if (normalizedPreferredName !== firebaseUser.displayName) {
+      await updateProfile(firebaseUser, { displayName: normalizedPreferredName });
+    }
   }
+
+  const profileSnapshot = await getDoc(userRef);
+  const profileData = profileSnapshot.exists() ? profileSnapshot.data() : {};
+  const resolvedDisplayName =
+    profileData.displayName ||
+    firebaseUser.displayName ||
+    firebaseUser.email?.split('@')[0] ||
+    'Quiz User';
 
   return {
     id: firebaseUser.uid,
     uid: firebaseUser.uid,
     email: firebaseUser.email || '',
-    displayName: firebaseUser.displayName || '',
+    displayName: resolvedDisplayName,
     profilePhotoUrl: firebaseUser.photoURL || null,
   };
 };
@@ -118,9 +139,9 @@ export const login = async (email, password) => {
   };
 };
 
-export const register = async (email, password) => {
+export const register = async (email, password, displayName = '') => {
   const credential = await createUserWithEmailAndPassword(auth, email, password);
-  const user = await ensureUserProfile(credential.user);
+  const user = await ensureUserProfile(credential.user, displayName);
   const token = await credential.user.getIdToken();
 
   return {
@@ -131,6 +152,29 @@ export const register = async (email, password) => {
 
 export const logout = async () => {
   await signOut(auth);
+};
+
+export const updateUserDisplayName = async (displayName) => {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error('Not authenticated');
+  }
+
+  const normalizedName = String(displayName || '').trim();
+  if (!normalizedName) {
+    throw new Error('Name cannot be empty');
+  }
+
+  await updateDoc(doc(db, 'users', currentUser.uid), { displayName: normalizedName });
+  await updateProfile(currentUser, { displayName: normalizedName });
+
+  return {
+    id: currentUser.uid,
+    uid: currentUser.uid,
+    email: currentUser.email || '',
+    displayName: normalizedName,
+    profilePhotoUrl: currentUser.photoURL || null,
+  };
 };
 
 export const getQuizzes = async () => {

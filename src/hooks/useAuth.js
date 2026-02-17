@@ -1,10 +1,13 @@
 import { createContext, useContext, useState, useEffect, createElement } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth } from '@/firebase/client.js';
+import { db } from '@/firebase/client.js';
 import {
   login as apiLogin,
   logout as apiLogout,
   register as apiRegister,
+  updateUserDisplayName as apiUpdateUserDisplayName,
 } from '@/api/api.js';
 import {
   clearDevAccessSession,
@@ -36,12 +39,18 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const nextToken = await firebaseUser.getIdToken();
+        const userSnapshot = await getDoc(doc(db, 'users', firebaseUser.uid));
+        const userData = userSnapshot.exists() ? userSnapshot.data() : {};
         setToken(nextToken);
         setUser({
           id: firebaseUser.uid,
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
-          displayName: firebaseUser.displayName || '',
+          displayName:
+            userData.displayName ||
+            firebaseUser.displayName ||
+            firebaseUser.email?.split('@')[0] ||
+            'Quiz User',
           profilePhotoUrl: firebaseUser.photoURL || null,
         });
         setIsAuthenticated(true);
@@ -84,9 +93,9 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (email, password) => {
+  const register = async (email, password, displayName = '') => {
     try {
-      const response = await apiRegister(email, password);
+      const response = await apiRegister(email, password, displayName);
       
       setUser(response.user);
       setToken(response.token);
@@ -94,6 +103,19 @@ export const AuthProvider = ({ children }) => {
       writeDevAccessSession({ enabled: false, email, uid: response.user.uid });
       setIsDevFeaturesEnabled(false);
 
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  };
+
+  const updateUserDisplayName = async (displayName) => {
+    try {
+      const updatedUser = await apiUpdateUserDisplayName(displayName);
+      setUser((previous) => ({
+        ...previous,
+        ...updatedUser,
+      }));
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -120,6 +142,7 @@ export const AuthProvider = ({ children }) => {
     isDevFeaturesEnabled,
     login,
     register,
+    updateUserDisplayName,
     logout
   };
 

@@ -63,16 +63,23 @@ const Login = () => {
               <CardDescription className="text-center text-sm md:text-base">Sign in to continue your learning journey</CardDescription>
             </CardHeader>
             <CardContent className="px-6 pb-6">
-              <form onSubmit={handleSubmit} className="space-y-4 md:space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-4 md:space-y-6" autoComplete="on">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-sm md:text-base">Email</Label>
                   <Input
                     id="email"
+                    name="email"
                     type="email"
                     placeholder="student@university.edu"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    inputMode="email"
+                    enterKeyHint="next"
                     className="h-12 text-base w-full"
                   />
                 </div>
@@ -81,11 +88,14 @@ const Login = () => {
                   <Label htmlFor="password" className="text-sm md:text-base">Password</Label>
                   <Input
                     id="password"
+                    name="password"
                     type="password"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
+                    autoComplete="current-password"
+                    enterKeyHint="go"
                     className="h-12 text-base w-full"
                   />
                 </div>

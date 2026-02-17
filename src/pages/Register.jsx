@@ -10,6 +10,7 @@ import { GraduationCap } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast.jsx';
 
 const Register = () => {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -41,7 +42,7 @@ const Register = () => {
 
     setIsLoading(true);
 
-    const result = await register(email, password);
+    const result = await register(email, password, name);
 
     if (result.success) {
       toast({
@@ -84,6 +85,18 @@ const Register = () => {
             </CardHeader>
             <CardContent className="px-6 pb-6">
               <form onSubmit={handleSubmit} className="space-y-4 md:space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-sm md:text-base">Name (Optional)</Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Jane Doe"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="h-12 text-base w-full"
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-sm md:text-base">Email</Label>
                   <Input

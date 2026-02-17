@@ -4,13 +4,30 @@ import { useAuth } from '@/hooks/useAuth.js';
 import { useTheme } from '@/context/ThemeContext.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { GraduationCap, LogOut, Menu, X, Sun, Moon, Wrench } from 'lucide-react';
+import { GraduationCap, LogOut, Menu, X, Sun, Moon, Wrench, Settings } from 'lucide-react';
 
-const Navbar = () => {
+const getRelativeTimeGreeting = (date = new Date()) => {
+  const hour = date.getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+};
+
+const Navbar = ({ onOpenSettings }) => {
   const { user, logout, isDevFeaturesEnabled } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [now, setNow] = useState(() => new Date());
+  const canOpenSettings = typeof onOpenSettings === 'function';
+  const greeting = `${getRelativeTimeGreeting(now)}, ${user?.displayName || 'there'}`;
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -19,13 +36,16 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="bg-slate-100 border-b border-slate-300 sticky top-0 z-50 shadow-sm dark:bg-slate-950 dark:border-slate-800">
+    <nav className="bg-slate-100/50 border-b backdrop-blur-xl border-slate-300 sticky top-0 z-50 shadow-sm dark:bg-slate-950/50 dark:border-slate-800">
       <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <Link to="/quizzes" className="flex items-center gap-2 text-indigo-700 hover:text-indigo-800 transition-colors dark:text-indigo-400 dark:hover:text-indigo-300">
             <GraduationCap className="h-8 w-8" />
-            <span className="text-xl font-bold">QuizMaster</span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-xl font-bold">QuizMaster</span>
+              <span className="text-xs text-slate-600 dark:text-slate-400">{greeting}</span>
+            </div>
             {isDevFeaturesEnabled && (
               <Badge
                 variant="outline"
@@ -56,9 +76,20 @@ const Navbar = () => {
                 variant="ghost"
                 size="icon"
                 onClick={toggleTheme}
-                className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400"
+                className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-white aspect-square rounded-full p-2"
               >
                 {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (canOpenSettings) onOpenSettings();
+                }}
+                disabled={!canOpenSettings}
+                className="text-slate-700 dark:text-slate-300 border-none aspect-square rounded-full p-2"
+              >
+                <Settings className="h-6 w-6" />
               </Button>
 
               <div className="text-sm text-right">
@@ -106,6 +137,7 @@ const Navbar = () => {
             <div className="pt-2 pb-2 border-b border-slate-100 dark:border-slate-800">
               <p className="text-xs text-slate-500 dark:text-slate-400">Signed in as</p>
               <p className="font-medium text-slate-900 truncate dark:text-slate-200">{user?.email}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{user?.displayName || 'No display name'}</p>
               {isDevFeaturesEnabled && (
                 <Badge className="mt-2 bg-amber-600 hover:bg-amber-600 text-white">
                   <Wrench className="h-3 w-3 mr-1" />
@@ -124,6 +156,20 @@ const Navbar = () => {
                 Quizzes
               </Button>
             </Link>
+
+            {canOpenSettings && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  onOpenSettings();
+                  setIsMenuOpen(false);
+                }}
+                className="w-full justify-start text-slate-700 hover:text-indigo-700 h-12 text-base dark:text-slate-300 dark:hover:text-indigo-400"
+              >
+                <Settings className="h-5 w-5 mr-3" />
+                Settings
+              </Button>
+            )}
 
             <Button 
               variant="outline" 

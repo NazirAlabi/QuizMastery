@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
+import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import QuizRunner from '@/components/quiz/QuizRunner.jsx';
 import { getQuizById } from '@/api/api.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
@@ -12,6 +13,7 @@ const QuizPage = () => {
   const attemptId = searchParams.get('attemptId');
   const [quiz, setQuiz] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -52,7 +54,8 @@ const QuizPage = () => {
           <title>Loading Quiz - QuizMaster</title>
         </Helmet>
         <div className="min-h-screen">
-          <Navbar />
+          <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+          <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto dark:border-indigo-400"></div>
@@ -72,7 +75,8 @@ const QuizPage = () => {
       </Helmet>
 
       <div className="min-h-screen">
-        <Navbar />
+        <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+        <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="mb-8">

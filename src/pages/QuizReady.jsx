@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { Helmet } from 'react-helmet';
 import { Clock3, Play, ListChecks } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar.jsx';
+import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { getQuizById } from '@/api/api.js';
@@ -14,6 +15,7 @@ const QuizReady = () => {
   const [searchParams] = useSearchParams();
   const attemptId = searchParams.get('attemptId');
   const [countdown, setCountdown] = useState(3);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [quizTitle, setQuizTitle] = useState(location.state?.quizTitle || '');
   const questionCount = location.state?.questionCount;
   const estimatedTime = location.state?.estimatedTime;
@@ -73,7 +75,8 @@ const QuizReady = () => {
       </Helmet>
 
       <div className="min-h-screen">
-        <Navbar />
+        <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+        <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-14">
           <Card className="shadow-lg">

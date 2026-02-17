@@ -2,11 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --radius: 0.9rem;
+}
+
 html {
   @apply transition-colors duration-300;
 }
 
 body {
+  @apply overflow-x-clip;
   font-family: 'DM Sans', sans-serif;
 }
 

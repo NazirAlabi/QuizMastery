@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
+import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import ResultsDashboard from '@/components/results/ResultsDashboard.jsx';
 import ReviewPanel from '@/components/review/ReviewPanel.jsx';
 import DiscussionThread from '@/components/discussion/DiscussionThread.jsx';
@@ -15,6 +16,7 @@ const ResultsPage = () => {
   const { attemptId } = useParams();
   const [results, setResults] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('results');
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const navigate = useNavigate();
@@ -63,7 +65,8 @@ const ResultsPage = () => {
           <title>Loading Results - QuizMaster</title>
         </Helmet>
         <div className="min-h-screen">
-          <Navbar />
+          <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+          <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto dark:border-indigo-400"></div>
@@ -85,7 +88,8 @@ const ResultsPage = () => {
       </Helmet>
 
       <div className="min-h-screen">
-        <Navbar />
+        <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+        <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-12">
           <div className="mb-6 md:mb-8">

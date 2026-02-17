@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
+import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -13,6 +14,7 @@ import { useToast } from '@/components/ui/use-toast.jsx';
 const QuizList = () => {
   const [quizzes, setQuizzes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [startingQuiz, setStartingQuiz] = useState(null);
   const { user, isDevFeaturesEnabled } = useAuth();
   const navigate = useNavigate();
@@ -79,7 +81,8 @@ const QuizList = () => {
           <meta name="description" content="Browse and take quizzes on various computer science topics" />
         </Helmet>
         <div className="min-h-screen">
-          <Navbar />
+          <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+          <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto dark:border-indigo-400"></div>
@@ -99,7 +102,8 @@ const QuizList = () => {
       </Helmet>
 
       <div className="min-h-screen">
-        <Navbar />
+        <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+        <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-12">
           <div className="mb-6 md:mb-8">
