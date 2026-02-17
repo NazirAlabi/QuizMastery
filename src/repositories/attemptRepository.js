@@ -4,16 +4,13 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
-  query,
   Timestamp,
   updateDoc,
-  where,
+  setDoc,
 } from 'firebase/firestore';
 import { db } from '@/firebase/client.js';
 
 const attemptsCollection = collection(db, 'userAttempts');
-const attemptAnswersCollection = collection(db, 'attemptAnswers');
 
 class AttemptRepository {
   async createAttempt({ userId, quizId, timingSnapshot }) {
@@ -41,57 +38,32 @@ class AttemptRepository {
   }
 
   async upsertAttemptAnswer({ attemptId, questionId, userId, answer }) {
-    const existingAnswerQuery = query(
-      attemptAnswersCollection,
-      where('attemptId', '==', attemptId),
-      where('questionId', '==', questionId),
-      where('userId', '==', userId),
-      limit(1)
-    );
-
-    const existingSnapshot = await getDocs(existingAnswerQuery);
-    if (existingSnapshot.empty) {
-      const created = await addDoc(attemptAnswersCollection, {
-        attemptId,
+    const answerRef = doc(db, 'userAttempts', attemptId, 'answers', questionId);
+    await setDoc(
+      answerRef,
+      {
         questionId,
         userId,
         answer: String(answer ?? ''),
         answeredAt: Timestamp.now(),
-      });
-
-      return {
-        id: created.id,
-        attemptId,
-        questionId,
-        userId,
-        answer: String(answer ?? ''),
-      };
-    }
-
-    const existingDoc = existingSnapshot.docs[0];
-    await updateDoc(existingDoc.ref, {
-      answer: String(answer ?? ''),
-      answeredAt: Timestamp.now(),
-    });
+      },
+      { merge: true }
+    );
 
     return {
-      id: existingDoc.id,
-      ...existingDoc.data(),
+      id: questionId,
+      questionId,
+      userId,
       answer: String(answer ?? ''),
     };
   }
 
   async getAttemptAnswers(attemptId, userId) {
-    const q = query(
-      attemptAnswersCollection,
-      where('attemptId', '==', attemptId),
-      where('userId', '==', userId)
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((answerDoc) => ({
-      id: answerDoc.id,
-      ...answerDoc.data(),
-    }));
+    const answersCollection = collection(db, 'userAttempts', attemptId, 'answers');
+    const snapshot = await getDocs(answersCollection);
+    return snapshot.docs
+      .map((answerDoc) => ({ id: answerDoc.id, ...answerDoc.data() }))
+      .filter((answerDoc) => answerDoc.userId === userId);
   }
 
   async submitAttempt({ attemptId, score }) {

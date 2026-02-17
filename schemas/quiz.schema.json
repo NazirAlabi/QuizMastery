@@ -1,0 +1,13 @@
+{
+  "title": "Data Structures Fundamentals", // Quiz name displayed in list/detail views
+  "description": "Master the core concepts of arrays, linked lists, stacks, queues, and hash tables", // Summary of what this quiz covers
+  "topic": "Data Structures", // Primary subject/category for the quiz
+  "difficulty": 2, // 1=easy, 2=intermediate, 3=advanced
+  "estimatedTime": 25, // Duration in minutes (total or per-question based on flag below)
+  "isTimePerQuestion": false, // true=estimatedTime applies per question, false=applies to full quiz
+  "questionIds": ["q1", "q2", "q3"], // Ordered references to question document IDs
+  "questionCount": 0, // Dynamically computed count of non-archived questions
+  "createdAt": "FieldValue.serverTimestamp()", // Server-side creation timestamp
+  "lastModified": "FieldValue.serverTimestamp()", // Server-side update timestamp
+  "isArchived": false // Soft-delete flag; archived quizzes are hidden from active flows
+}

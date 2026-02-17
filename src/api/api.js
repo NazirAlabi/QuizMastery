@@ -9,6 +9,7 @@ import { auth, db } from '@/firebase/client.js';
 import { quizRepository } from '@/repositories/quizRepository.js';
 import { questionRepository } from '@/repositories/questionRepository.js';
 import { attemptRepository } from '@/repositories/attemptRepository.js';
+import { courseRepository } from '@/repositories/courseRepository.js';
 import { evaluateAnswer } from '@/utils/evaluateAnswer.js';
 
 const STORAGE_KEYS = {
@@ -19,6 +20,24 @@ const SCORE_LEVELS = {
   EXCELLENT: 90,
   GREAT: 75,
   GOOD: 60,
+};
+
+const DIFFICULTY_LABELS = {
+  1: 'easy',
+  2: 'medium',
+  3: 'hard',
+};
+
+const QUIZ_DIFFICULTY_LABELS = {
+  1: 'beginner',
+  2: 'intermediate',
+  3: 'advanced',
+};
+
+const SKILL_CATEGORY_LABELS = {
+  1: 'recall',
+  2: 'conceptual',
+  3: 'application',
 };
 
 const inferDifficulty = (tags = []) => {
@@ -35,38 +54,86 @@ const toDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const minutesFromTiming = (timing, fallbackQuestions = 0) => {
-  if (timing?.enabled && timing?.durationSeconds) {
-    return Math.max(1, Math.ceil(timing.durationSeconds / 60));
+const resolveEstimatedTime = (quiz, fallbackQuestions = 0) => {
+  if (Number.isFinite(Number(quiz?.estimatedTime)) && Number(quiz.estimatedTime) > 0) {
+    return Number(quiz.estimatedTime);
+  }
+  if (quiz?.timing?.enabled && quiz?.timing?.durationSeconds) {
+    return Math.max(1, Math.ceil(quiz.timing.durationSeconds / 60));
   }
   return Math.max(1, Math.ceil(fallbackQuestions * 1.5));
 };
 
-const mapQuestionForUi = (question) => {
-  const metadata = question.metadata || {};
+const resolveIsTimePerQuestion = (quiz) => {
+  if (typeof quiz?.isTimePerQuestion === 'boolean') return quiz.isTimePerQuestion;
+  return Boolean(quiz?.timing?.perQuestion);
+};
+
+const mapQuizTimingForUi = (quiz, questionCount) => {
+  const estimatedTime = resolveEstimatedTime(quiz, questionCount);
   return {
-    ...question,
-    options: Array.isArray(metadata.options) ? metadata.options : [],
-    correctAnswer: metadata.correctOption ?? null,
-    explanation: metadata.explanation || '',
-    difficulty: metadata.difficulty || inferDifficulty(question.tags || []),
-    topic: metadata.topic || question.courseCode || question.tags?.[0] || 'General',
-    skillCategory: metadata.skillCategory || 'conceptual',
+    enabled: estimatedTime > 0,
+    durationSeconds: Math.round(estimatedTime * 60),
+    perQuestion: resolveIsTimePerQuestion(quiz),
   };
 };
 
-const mapQuizForList = async (quiz) => {
-  const links = await quizRepository.getQuizQuestionLinks(quiz.id);
+const mapQuestionForUi = (question) => {
+  const metadata = question.metadata || {};
+  const difficultyLevel = Number(question.difficulty);
+  const skillCategoryLevel = Number(question.skillCategory);
+  const type = String(question.type || '').toLowerCase();
+
+  return {
+    ...question,
+    text: question.question_text || question.text || '',
+    type,
+    options: Array.isArray(metadata.options) ? metadata.options : [],
+    correctAnswer: metadata.correct_answer ?? metadata.correctOption ?? null,
+    acceptedAnswers: Array.isArray(metadata.accepted_answers)
+      ? metadata.accepted_answers
+      : Array.isArray(metadata.acceptedAnswers)
+        ? metadata.acceptedAnswers
+        : [],
+    numericAnswer: metadata.numeric_answer ?? metadata.numericAnswer ?? null,
+    tolerance: metadata.tolerance ?? null,
+    explanation: question.explanation || '',
+    difficulty: DIFFICULTY_LABELS[difficultyLevel] || inferDifficulty(question.tags || []),
+    topic: question.topic || question.courseCode || question.tags?.[0] || 'General',
+    skillCategory: SKILL_CATEGORY_LABELS[skillCategoryLevel] || 'conceptual',
+    difficultyLevel: Number.isFinite(difficultyLevel) ? difficultyLevel : null,
+    skillCategoryLevel: Number.isFinite(skillCategoryLevel) ? skillCategoryLevel : null,
+  };
+};
+
+const mapQuizForList = async (quiz, courseByQuizId) => {
+  const questionIds = Array.isArray(quiz.questionIds) ? quiz.questionIds : [];
+  const course = courseByQuizId.get(quiz.id) || null;
+  const questionCount = await quizRepository.getActiveQuestionCount(questionIds);
+  const estimatedTime = resolveEstimatedTime(quiz, questionCount);
+
   return {
     id: quiz.id,
-    title: quiz.name,
-    name: quiz.name,
+    title: quiz.title || quiz.name,
+    name: quiz.title || quiz.name,
     description: quiz.description || 'No description provided.',
-    topic: quiz.courseCode || quiz.tags?.[0] || 'General',
-    difficulty: inferDifficulty(quiz.tags || []),
-    timing: quiz.timing || { enabled: false },
-    questionCount: links.length,
-    estimatedTime: minutesFromTiming(quiz.timing, links.length),
+    topic:
+      quiz.topic ||
+      course?.topic ||
+      course?.courseCode ||
+      course?.title ||
+      course?.code ||
+      course?.name ||
+      quiz.courseCode ||
+      quiz.tags?.[0] ||
+      'General',
+    difficulty:
+      QUIZ_DIFFICULTY_LABELS[Number(quiz.difficulty)] || inferDifficulty(quiz.tags || []),
+    timing: mapQuizTimingForUi(quiz, questionCount),
+    isTimePerQuestion: resolveIsTimePerQuestion(quiz),
+    questionCount,
+    estimatedTime,
+    isArchived: Boolean(quiz.isArchived),
   };
 };
 
@@ -179,28 +246,61 @@ export const updateUserDisplayName = async (displayName) => {
 
 export const getQuizzes = async () => {
   const quizzes = await quizRepository.getQuizzes();
-  return Promise.all(quizzes.map(mapQuizForList));
+  const courses = await courseRepository.getCourses();
+
+  const courseByQuizId = new Map();
+  courses.filter((course) => course?.isArchived !== true).forEach((course) => {
+    const quizIds = Array.isArray(course.quizIds) ? course.quizIds : [];
+    quizIds.forEach((quizId) => {
+      courseByQuizId.set(quizId, course);
+    });
+  });
+
+  const activeQuizzes = quizzes.filter((quiz) => quiz?.isArchived !== true);
+  return Promise.all(activeQuizzes.map((quiz) => mapQuizForList(quiz, courseByQuizId)));
+};
+
+export const createCourse = async (payload) => {
+  return courseRepository.createCourse(payload);
+};
+
+export const updateCourse = async (courseId, payload) => {
+  return courseRepository.updateCourse(courseId, payload);
 };
 
 export const getQuizById = async (quizId) => {
   const quiz = await quizRepository.getQuizById(quizId);
-  if (!quiz) {
+  if (!quiz || quiz.isArchived === true) {
     throw new Error('Quiz not found');
   }
 
   const questions = await quizRepository.getQuizQuestions(quizId);
   const mappedQuestions = questions.map(mapQuestionForUi);
+  const course = await courseRepository.getCourseByQuizId(quizId);
+  const estimatedTime = resolveEstimatedTime(quiz, mappedQuestions.length);
+  const timing = mapQuizTimingForUi(quiz, mappedQuestions.length);
 
   return {
     id: quiz.id,
-    title: quiz.name,
-    name: quiz.name,
+    title: quiz.title || quiz.name,
+    name: quiz.title || quiz.name,
     description: quiz.description || '',
-    topic: quiz.courseCode || quiz.tags?.[0] || 'General',
-    difficulty: inferDifficulty(quiz.tags || []),
-    timing: quiz.timing || { enabled: false },
+    topic:
+      quiz.topic ||
+      course?.topic ||
+      course?.courseCode ||
+      course?.title ||
+      course?.code ||
+      course?.name ||
+      quiz.courseCode ||
+      quiz.tags?.[0] ||
+      'General',
+    difficulty:
+      QUIZ_DIFFICULTY_LABELS[Number(quiz.difficulty)] || inferDifficulty(quiz.tags || []),
+    timing,
+    isTimePerQuestion: resolveIsTimePerQuestion(quiz),
     questionCount: mappedQuestions.length,
-    estimatedTime: minutesFromTiming(quiz.timing, mappedQuestions.length),
+    estimatedTime,
     questions: mappedQuestions,
   };
 };
@@ -215,14 +315,15 @@ export const startAttempt = async (quizId, userId) => {
   }
 
   const quiz = await quizRepository.getQuizById(quizId);
-  if (!quiz) {
+  if (!quiz || quiz.isArchived === true) {
     throw new Error('Quiz not found');
   }
 
+  const estimatedTime = resolveEstimatedTime(quiz, Array.isArray(quiz.questionIds) ? quiz.questionIds.length : 0);
   const timingSnapshot = {
-    enabled: Boolean(quiz.timing?.enabled),
-    durationSeconds: quiz.timing?.durationSeconds || null,
-    perQuestion: Boolean(quiz.timing?.perQuestion),
+    enabled: estimatedTime > 0,
+    durationSeconds: Math.round(estimatedTime * 60),
+    perQuestion: resolveIsTimePerQuestion(quiz),
   };
 
   return attemptRepository.createAttempt({

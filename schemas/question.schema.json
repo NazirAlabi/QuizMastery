@@ -1,0 +1,23 @@
+{
+  "type": "mcq | short_answer | numeric | long_answer", // Question response type enum
+  "question_text": "String", // Prompt shown to the learner
+  "metadata": { // Type-specific grading/configuration object
+    "options": [ // Required when type = "mcq"
+      { "id": "A", "text": "Option A" }, // Option id (submitted value) and visible label
+      { "id": "B", "text": "Option B" }
+    ],
+    "correct_answer": "A", // Required when type = "mcq"; must match an option id
+    "accepted_answers": ["answer1", "answer2"], // Required when type = "short_answer"
+    "case_sensitive": false, // For short answers: true keeps letter case significant
+    "ignore_whitespace": true, // For short answers: true strips/ignores spaces before compare
+    "numeric_answer": 42, // Required when type = "numeric"
+    "tolerance": 0.01 // Optional numeric margin of error for numeric grading
+  },
+  "difficulty": "1 | 2 | 3", // 1=easy, 2=intermediate, 3=advanced
+  "topic": "String", // Subject area for grouping/reporting
+  "skillCategory": "1 | 2 | 3", // 1=recall, 2=conceptual, 3=memorization
+  "explanation": "String", // Optional rationale shown after answering/review
+  "createdAt": "FieldValue.serverTimestamp()", // Server-side creation timestamp
+  "lastModified": "FieldValue.serverTimestamp()", // Server-side update timestamp
+  "isArchived": false // Soft-delete flag; archived questions are excluded from active use
+}

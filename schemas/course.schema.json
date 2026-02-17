@@ -1,0 +1,11 @@
+{
+  "title": "Data Structures 101", // Course name shown to learners/admins
+  "description": "An introductory course covering arrays, linked lists, stacks, queues, and hash tables", // Course overview text
+  "courseCode": "CS101", // Optional unique short code for filtering/search
+  "topic": "Data Structures", // Course domain/category
+  "quizIds": ["quiz1", "quiz2", "quiz3"], // Referenced quiz document IDs included in this course
+  "quizCount": 0, // Dynamically computed count of non-archived quizzes
+  "createdAt": "FieldValue.serverTimestamp()", // Server-side creation timestamp
+  "lastModified": "FieldValue.serverTimestamp()", // Server-side update timestamp
+  "isArchived": false // Soft-delete flag; archived courses are excluded from active views
+}
