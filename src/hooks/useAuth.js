@@ -6,6 +6,13 @@ import {
   logout as apiLogout,
   register as apiRegister,
 } from '@/api/api.js';
+import {
+  clearDevAccessSession,
+  getResolvedAuthCredentials,
+  isDevCredentialMatch,
+  readDevAccessSession,
+  writeDevAccessSession,
+} from '@/config/devFeatures.js';
 
 const AuthContext = createContext(null);
 
@@ -14,6 +21,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDevFeaturesEnabled, setIsDevFeaturesEnabled] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -21,6 +29,7 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
         setToken(null);
         setIsAuthenticated(false);
+        setIsDevFeaturesEnabled(false);
         setIsLoading(false);
         return;
       }
@@ -36,11 +45,19 @@ export const AuthProvider = ({ children }) => {
           profilePhotoUrl: firebaseUser.photoURL || null,
         });
         setIsAuthenticated(true);
+
+        const savedSession = readDevAccessSession();
+        const hasMatchingDevSession =
+          Boolean(savedSession?.enabled) &&
+          Boolean(savedSession?.uid) &&
+          savedSession.uid === firebaseUser.uid;
+        setIsDevFeaturesEnabled(hasMatchingDevSession);
       } catch (error) {
         console.error('Failed to restore auth state:', error);
         setUser(null);
         setToken(null);
         setIsAuthenticated(false);
+        setIsDevFeaturesEnabled(false);
       } finally {
         setIsLoading(false);
       }
@@ -51,11 +68,15 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const response = await apiLogin(email, password);
+      const authCredentials = getResolvedAuthCredentials(email, password);
+      const response = await apiLogin(authCredentials.email, authCredentials.password);
       
       setUser(response.user);
       setToken(response.token);
       setIsAuthenticated(true);
+      const devEnabled = isDevCredentialMatch(email, password);
+      writeDevAccessSession({ enabled: devEnabled, email, uid: response.user.uid });
+      setIsDevFeaturesEnabled(devEnabled);
 
       return { success: true };
     } catch (error) {
@@ -70,6 +91,8 @@ export const AuthProvider = ({ children }) => {
       setUser(response.user);
       setToken(response.token);
       setIsAuthenticated(true);
+      writeDevAccessSession({ enabled: false, email, uid: response.user.uid });
+      setIsDevFeaturesEnabled(false);
 
       return { success: true };
     } catch (error) {
@@ -84,6 +107,8 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setToken(null);
       setIsAuthenticated(false);
+      setIsDevFeaturesEnabled(false);
+      clearDevAccessSession();
     }
   };
 
@@ -92,6 +117,7 @@ export const AuthProvider = ({ children }) => {
     token,
     isAuthenticated,
     isLoading,
+    isDevFeaturesEnabled,
     login,
     register,
     logout

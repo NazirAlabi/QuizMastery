@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.j
 import { Button } from '@/components/ui/button.jsx';
 import { getResults } from '@/api/api.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
+import { useAuth } from '@/hooks/useAuth.js';
 
 const ResultsPage = () => {
   const { attemptId } = useParams();
@@ -18,6 +19,7 @@ const ResultsPage = () => {
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isDevFeaturesEnabled } = useAuth();
 
   useEffect(() => {
     loadResults();
@@ -91,6 +93,15 @@ const ResultsPage = () => {
             <p className="text-sm md:text-base text-slate-600 dark:text-slate-400">Review your performance and learn from your answers</p>
           </div>
 
+          {isDevFeaturesEnabled && (
+            <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Developer Summary</p>
+              <p className="text-xs font-mono text-amber-800 mt-1 dark:text-amber-300">
+                attemptId={results.attemptId} | quizId={results.quizId} | correct={results.correctAnswers}/{results.totalQuestions}
+              </p>
+            </div>
+          )}
+
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="mb-6 w-full flex h-auto p-1 bg-slate-100 rounded-lg overflow-x-auto dark:bg-slate-800">
               <TabsTrigger value="results" className="flex-1 min-w-[100px] py-2">Results</TabsTrigger>
@@ -131,6 +142,12 @@ const ResultsPage = () => {
               )}
             </TabsContent>
           </Tabs>
+
+          {isDevFeaturesEnabled && (
+            <pre className="mt-6 p-4 rounded-lg border border-slate-300 bg-slate-100 text-xs overflow-x-auto dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              {JSON.stringify(results, null, 2)}
+            </pre>
+          )}
         </div>
       </div>
     </>

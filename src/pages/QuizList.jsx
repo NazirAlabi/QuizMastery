@@ -14,7 +14,7 @@ const QuizList = () => {
   const [quizzes, setQuizzes] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [startingQuiz, setStartingQuiz] = useState(null);
-  const { user } = useAuth();
+  const { user, isDevFeaturesEnabled } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -109,6 +109,19 @@ const QuizList = () => {
             </p>
           </div>
 
+          {isDevFeaturesEnabled && (
+            <Card className="mb-6 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base text-amber-900 dark:text-amber-200">
+                  Developer Features
+                </CardTitle>
+                <CardDescription className="text-amber-800 dark:text-amber-300">
+                  Quiz metadata is visible and start buttons include raw IDs for debugging.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+
           <div className="flex flex-wrap gap-4 md:gap-6">
             {quizzes.map((quiz) => (
               <Card key={quiz.id} className="max-w-md hover:shadow-lg transition-shadow flex flex-col h-full dark:hover:shadow-slate-800/50">
@@ -134,6 +147,11 @@ const QuizList = () => {
                     <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800">
                       {quiz.topic}
                     </Badge>
+                    {isDevFeaturesEnabled && (
+                      <div className="text-xs text-slate-500 font-mono dark:text-slate-400">
+                        quizId={quiz.id} | timing={quiz.timing?.enabled ? 'timed' : 'untimed'}
+                      </div>
+                    )}
                   </div>
 
                   <Button
@@ -142,7 +160,11 @@ const QuizList = () => {
                     className="w-full min-h-[2.75rem] md:min-h-[2.5rem] bg-indigo-600 hover:bg-indigo-700 text-white text-base dark:bg-indigo-500 dark:hover:bg-indigo-600"
                   >
                     <Play className="h-5 w-5 md:h-4 md:w-4 mr-2 hover:fill-white" />
-                    {startingQuiz === quiz.id ? 'Starting...' : 'Start Quiz'}
+                    {startingQuiz === quiz.id
+                      ? 'Starting...'
+                      : isDevFeaturesEnabled
+                        ? `Start Quiz (${quiz.id})`
+                        : 'Start Quiz'}
                   </Button>
                 </CardContent>
               </Card>

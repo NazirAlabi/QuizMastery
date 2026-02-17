@@ -3,10 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth.js';
 import { useTheme } from '@/context/ThemeContext.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { GraduationCap, LogOut, Menu, X, Sun, Moon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge.jsx';
+import { GraduationCap, LogOut, Menu, X, Sun, Moon, Wrench } from 'lucide-react';
 
 const Navbar = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, isDevFeaturesEnabled } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -25,6 +26,14 @@ const Navbar = () => {
           <Link to="/quizzes" className="flex items-center gap-2 text-indigo-700 hover:text-indigo-800 transition-colors dark:text-indigo-400 dark:hover:text-indigo-300">
             <GraduationCap className="h-8 w-8" />
             <span className="text-xl font-bold">QuizMaster</span>
+            {isDevFeaturesEnabled && (
+              <Badge
+                variant="outline"
+                className="text-[10px] uppercase tracking-wide bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+              >
+                Dev Mode
+              </Badge>
+            )}
           </Link>
 
           {/* Desktop Navigation */}
@@ -37,6 +46,12 @@ const Navbar = () => {
             </Link>
 
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-slate-800">
+              {isDevFeaturesEnabled && (
+                <Badge className="bg-amber-600 hover:bg-amber-600 text-white">
+                  <Wrench className="h-3 w-3 mr-1" />
+                  Dev Features On
+                </Badge>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -91,6 +106,12 @@ const Navbar = () => {
             <div className="pt-2 pb-2 border-b border-slate-100 dark:border-slate-800">
               <p className="text-xs text-slate-500 dark:text-slate-400">Signed in as</p>
               <p className="font-medium text-slate-900 truncate dark:text-slate-200">{user?.email}</p>
+              {isDevFeaturesEnabled && (
+                <Badge className="mt-2 bg-amber-600 hover:bg-amber-600 text-white">
+                  <Wrench className="h-3 w-3 mr-1" />
+                  Dev Features On
+                </Badge>
+              )}
             </div>
             
             <Link 

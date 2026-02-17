@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/context/ThemeContext.jsx';
 import { Toaster } from '@/components/ui/toaster.jsx';
 import ProtectedRoute from '@/components/ProtectedRoute.jsx';
 import WallpaperToggleButton from '@/components/layout/WallpaperToggleButton.jsx';
+import SiteFooter from '@/components/layout/SiteFooter.jsx';
 import Login from '@/pages/Login.jsx';
 import Register from '@/pages/Register.jsx';
 import QuizList from '@/pages/QuizList.jsx';
@@ -60,6 +61,7 @@ function App() {
             
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
+          <SiteFooter />
           <WallpaperToggleButton />
           <Toaster />
         </AuthProvider>

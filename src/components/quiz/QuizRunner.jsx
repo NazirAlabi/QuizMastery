@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { submitAnswer, submitQuiz } from '@/api/api.js';
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast.jsx';
+import { useAuth } from '@/hooks/useAuth.js';
 
 const QuizRunner = ({ quiz, attemptId }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -17,6 +18,7 @@ const QuizRunner = ({ quiz, attemptId }) => {
   );
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isDevFeaturesEnabled } = useAuth();
   const hasSubmittedRef = useRef(false);
 
   const currentQuestion = quiz.questions[currentQuestionIndex];
@@ -138,9 +140,31 @@ const QuizRunner = ({ quiz, attemptId }) => {
         </div>
       </div>
 
+      {isDevFeaturesEnabled && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+          <p className="text-sm font-semibold text-amber-900 mb-2 dark:text-amber-200">Developer Panel</p>
+          <p className="text-xs font-mono text-amber-800 dark:text-amber-300">
+            attemptId={attemptId} | questionId={currentQuestion.id} | selected={answers[currentQuestion.id] || 'none'} | correct={currentQuestion.correctAnswer}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {quiz.questions.map((question, index) => (
+              <Button
+                key={question.id}
+                size="sm"
+                variant={index === currentQuestionIndex ? 'default' : 'outline'}
+                onClick={() => setCurrentQuestionIndex(index)}
+                className="min-w-10"
+              >
+                {index + 1}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <QuestionCard
         question={currentQuestion}
-        selectedAnswer={answers[currentQuestion.id]}
+        selectedAnswer={isDevFeaturesEnabled ? currentQuestion.correctAnswer : answers[currentQuestion.id]}
         onSelectOption={handleSelectOption}
       />
 
