@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -121,6 +122,14 @@ const validateQuestionPayload = (question) => {
 };
 
 class QuestionRepository {
+  async getQuestions() {
+    const snapshot = await getDocs(questionsCollection);
+    return snapshot.docs.map((questionDoc) => ({
+      id: questionDoc.id,
+      ...questionDoc.data(),
+    }));
+  }
+
   async getQuestionById(questionId) {
     const snapshot = await getDoc(doc(db, 'questions', questionId));
     if (!snapshot.exists()) return null;
@@ -181,6 +190,11 @@ class QuestionRepository {
     });
 
     return this.getQuestionById(questionId);
+  }
+
+  async deleteQuestion(questionId) {
+    await deleteDoc(doc(db, 'questions', questionId));
+    return { id: questionId, deleted: true };
   }
 }
 

@@ -27,9 +27,9 @@ const toastVariants = cva(
 			variant: {
 				default:
 					// Solid-ish background with slight opacity + backdrop blur for depth (works in modern browsers)
-					'bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border border-gray-200/60 dark:border-slate-700/60 text-foreground',
+					'bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border border-gray-200/60 dark:border-slate-700/60 text-slate-900 dark:text-slate-100',
 				destructive:
-					'group destructive border-destructive bg-red-600/95 text-white backdrop-blur-sm',
+					'group destructive border-destructive bg-red-600/95 text-white dark:text-slate-100 backdrop-blur-sm',
 			},
 		},
 		defaultVariants: {
@@ -88,7 +88,7 @@ ToastTitle.displayName = ToastPrimitives.Title.displayName;
 const ToastDescription = React.forwardRef(({ className, ...props }, ref) => (
 	<ToastPrimitives.Description
 		ref={ref}
-		className={cn('text-sm opacity-90', className)}
+		className={cn('text-sm opacity-90 dark:text-slate-200', className)}
 		{...props}
 	/>
 ));

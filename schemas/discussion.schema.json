@@ -1,0 +1,29 @@
+{
+    "question_id": "linked_questiond_id",
+    "createdAt" : "FieldValue.serverTimestamp()",
+    "lastModified" : "FieldValue.serverTimestamp()",
+    "comments" :   [
+        {
+            "userId" : "linked_user_id",
+            "displayName" : "displayName | email | Anonymous | Admin",
+            "comment_text" : "The way it is solve is independent of the magnitude of the values given",
+            "upvotes" : "integer",
+            "downvotes" : "integer",
+            "admin_rated": false,
+            "createdAt" : "FieldValue.serverTimestamp()",
+            "lastModified" : "FieldValue.serverTimestamp()",
+            "isArchived" : false
+        },
+        {
+            "userId" : "linked_user_id",
+            "displayName" : "displayName | email | Anonymous | Admin",
+            "comment_text" : "I didn't understand it because of the notation. Can you please explain it in a different way?",
+            "upvotes" : "integer",
+            "downvotes" : "integer",
+            "admin_rated": false,
+            "createdAt" : "FieldValue.serverTimestamp()",
+            "lastModified" : "FieldValue.serverTimestamp()",
+            "isArchived" : false
+        }
+    ]
+}

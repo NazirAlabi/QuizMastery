@@ -1,0 +1,6 @@
+Add a bad network view if loading quizzes or anything else fails due to internet connection
+Decide on a system of login persistence
+Allow a code to be typed from any user profile to turn on dev settings. The code should be stored as a hash in firestore to prevent authorization by peeking in the code in console.
+Make the quiz cards more responsive
+Decide on how stats from past quiz trials are saved, analyzed, and displayed.
+Add a discussion file linked to each question following the respective schema

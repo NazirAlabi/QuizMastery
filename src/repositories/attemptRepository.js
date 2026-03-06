@@ -31,6 +31,19 @@ class AttemptRepository {
     };
   }
 
+  async configureAttempt({ attemptId, timingSnapshot, attemptConfig, questionOrder }) {
+    const attemptRef = doc(db, 'userAttempts', attemptId);
+    await updateDoc(attemptRef, {
+      timingSnapshot,
+      attemptConfig,
+      questionOrder: Array.isArray(questionOrder) ? questionOrder : [],
+      configuredAt: Timestamp.now(),
+    });
+
+    const updatedAttempt = await this.getAttemptById(attemptId);
+    return updatedAttempt;
+  }
+
   async getAttemptById(attemptId) {
     const snapshot = await getDoc(doc(db, 'userAttempts', attemptId));
     if (!snapshot.exists()) return null;
@@ -72,6 +85,14 @@ class AttemptRepository {
       score,
       status: 'submitted',
       submittedAt: Timestamp.now(),
+    });
+  }
+
+  async abandonAttempt({ attemptId }) {
+    const attemptRef = doc(db, 'userAttempts', attemptId);
+    await updateDoc(attemptRef, {
+      status: 'abandoned',
+      abandonedAt: Timestamp.now(),
     });
   }
 }

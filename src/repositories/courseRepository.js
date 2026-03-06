@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -12,7 +13,6 @@ import {
 import { db } from '@/firebase/client.js';
 
 const coursesCollection = collection(db, 'courses');
-const quizzesCollection = collection(db, 'quizzes');
 
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
 
@@ -52,27 +52,9 @@ const validateCoursePayload = (course) => {
 };
 
 class CourseRepository {
-  async getActiveQuizCount(quizIds) {
-    if (!Array.isArray(quizIds) || !quizIds.length) return 0;
-
-    const chunks = [];
-    for (let i = 0; i < quizIds.length; i += 30) {
-      chunks.push(quizIds.slice(i, i + 30));
-    }
-
-    let count = 0;
-    for (const chunk of chunks) {
-      const q = query(quizzesCollection, where('__name__', 'in', chunk));
-      const snapshot = await getDocs(q);
-      snapshot.forEach((quizDoc) => {
-        const quizData = quizDoc.data();
-        if (quizData?.isArchived !== true) {
-          count += 1;
-        }
-      });
-    }
-
-    return count;
+  getActiveQuizCount(quizIds) {
+    if (!Array.isArray(quizIds)) return 0;
+    return quizIds.length;
   }
 
   async getCourses() {
@@ -82,12 +64,10 @@ class CourseRepository {
       ...courseDoc.data(),
     }));
 
-    return Promise.all(
-      courses.map(async (course) => ({
-        ...course,
-        quizCount: await this.getActiveQuizCount(Array.isArray(course.quizIds) ? course.quizIds : []),
-      }))
-    );
+    return courses.map((course) => ({
+      ...course,
+      quizCount: this.getActiveQuizCount(Array.isArray(course.quizIds) ? course.quizIds : []),
+    }));
   }
 
   async getCourseByQuizId(quizId) {
@@ -104,8 +84,23 @@ class CourseRepository {
 
     return {
       ...course,
-      quizCount: await this.getActiveQuizCount(Array.isArray(course.quizIds) ? course.quizIds : []),
+      quizCount: this.getActiveQuizCount(Array.isArray(course.quizIds) ? course.quizIds : []),
     };
+  }
+
+  async getCoursesByQuizId(quizId) {
+    const q = query(coursesCollection, where('quizIds', 'array-contains', quizId));
+    const snapshot = await getDocs(q);
+    return snapshot.docs
+      .map((courseDoc) => ({
+        id: courseDoc.id,
+        ...courseDoc.data(),
+      }))
+      .filter((course) => course.isArchived !== true)
+      .map((course) => ({
+        ...course,
+        quizCount: this.getActiveQuizCount(Array.isArray(course.quizIds) ? course.quizIds : []),
+      }));
   }
 
   async getCourseById(courseId) {
@@ -118,7 +113,7 @@ class CourseRepository {
 
     return {
       ...course,
-      quizCount: await this.getActiveQuizCount(Array.isArray(course.quizIds) ? course.quizIds : []),
+      quizCount: this.getActiveQuizCount(Array.isArray(course.quizIds) ? course.quizIds : []),
     };
   }
 
@@ -126,7 +121,7 @@ class CourseRepository {
     const course = normalizeCoursePayload(payload);
     validateCoursePayload(course);
 
-    const quizCount = await this.getActiveQuizCount(course.quizIds);
+    const quizCount = this.getActiveQuizCount(course.quizIds);
     const docRef = await addDoc(coursesCollection, {
       ...course,
       quizCount,
@@ -141,7 +136,7 @@ class CourseRepository {
     const course = normalizeCoursePayload(payload);
     validateCoursePayload(course);
 
-    const quizCount = await this.getActiveQuizCount(course.quizIds);
+    const quizCount = this.getActiveQuizCount(course.quizIds);
     const courseRef = doc(db, 'courses', courseId);
     await updateDoc(courseRef, {
       ...course,
@@ -150,6 +145,11 @@ class CourseRepository {
     });
 
     return this.getCourseById(courseId);
+  }
+
+  async deleteCourse(courseId) {
+    await deleteDoc(doc(db, 'courses', courseId));
+    return { id: courseId, deleted: true };
   }
 }
 

@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import QuizRunner from '@/components/quiz/QuizRunner.jsx';
-import { getQuizById } from '@/api/api.js';
+import { getAttemptQuizSession } from '@/api/api.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
 
 const QuizPage = () => {
@@ -29,16 +29,19 @@ const QuizPage = () => {
     }
 
     loadQuiz();
-  }, [id, attemptId]);
+  }, [id, attemptId, navigate, toast]);
 
   const loadQuiz = async () => {
     try {
-      const data = await getQuizById(id);
-      setQuiz(data);
+      const session = await getAttemptQuizSession(attemptId);
+      if (String(session?.quiz?.id || '') !== String(id || '')) {
+        throw new Error('Attempt does not match selected quiz');
+      }
+      setQuiz(session.quiz);
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to load quiz',
+        description: error?.message || 'Failed to load quiz',
         variant: 'destructive'
       });
       navigate('/quizzes');

@@ -1,0 +1,59 @@
+// general structure
+// [
+//   {
+//     "type": "mcq | short_answer | numeric | long_answer",
+//     "question_text": "string",
+//     "metadata": { ...type-specific fields... },
+//     "difficulty": 1 | 2 | 3,
+//     "topic": "string",
+//     "skillCategory": 1 | 2 | 3,
+//     "explanation": "string (optional)"
+//   }
+// ]
+
+// for mcq
+// "type": "mcq",
+// "metadata": {
+//   "options": [{ "id": "A", "text": "..." }],
+//   "correct_answer": "A"
+// }
+
+// for short answer
+// "type": "short_answer",
+// "metadata": {
+//   "accepted_answers": ["stack", "a stack"],
+//   "case_sensitive": false,
+//   "ignore_whitespace": true
+// }
+
+// for numeric
+// "type": "numeric",
+// "metadata": {
+//   "numeric_answer": 3.14,
+//   "tolerance": 0.01
+// }
+
+// for long answer
+// "type": "long_answer",
+// "metadata": {}
+
+// example
+{"questions": [
+  {
+    "type": "mcq",
+    "question_text": "What is the time complexity of binary search?",
+    "metadata": {
+      "options": [
+        { "id": "A", "text": "O(n)" },
+        { "id": "B", "text": "O(log n)" },
+        { "id": "C", "text": "O(n log n)" },
+        { "id": "D", "text": "O(1)" }
+      ],
+      "correct_answer": "B"
+    },
+    "difficulty": 1,
+    "topic": "Algorithms",
+    "skillCategory": 2,
+    "explanation": "Binary search halves the search space each iteration."
+  }
+]}

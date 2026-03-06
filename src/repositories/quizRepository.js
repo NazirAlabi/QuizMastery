@@ -1,11 +1,14 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/firebase/client.js';
 import { questionRepository } from '@/repositories/questionRepository.js';
@@ -69,6 +72,29 @@ class QuizRepository {
     return { id: snapshot.id, ...snapshot.data() };
   }
 
+  async getQuizzesByIds(quizIds) {
+    if (!Array.isArray(quizIds) || quizIds.length === 0) return [];
+
+    const chunks = [];
+    for (let index = 0; index < quizIds.length; index += 30) {
+      chunks.push(quizIds.slice(index, index + 30));
+    }
+
+    const quizzes = [];
+    for (const chunk of chunks) {
+      const quizQuery = query(quizzesCollection, where('__name__', 'in', chunk));
+      const snapshot = await getDocs(quizQuery);
+      snapshot.forEach((quizDoc) => {
+        quizzes.push({
+          id: quizDoc.id,
+          ...quizDoc.data(),
+        });
+      });
+    }
+
+    return quizzes;
+  }
+
   async getActiveQuestionCount(questionIds) {
     if (!questionIds.length) return 0;
     const questions = await questionRepository.getQuestionsByIds(questionIds);
@@ -123,6 +149,11 @@ class QuizRepository {
     });
 
     return this.getQuizById(quizId);
+  }
+
+  async deleteQuiz(quizId) {
+    await deleteDoc(doc(db, 'quizzes', quizId));
+    return { id: quizId, deleted: true };
   }
 }
 

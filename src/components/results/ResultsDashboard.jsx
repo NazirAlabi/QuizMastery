@@ -1,10 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import WeaknessCard from '@/components/results/WeaknessCard.jsx';
-import { CheckCircle, XCircle, TrendingUp, Brain, Target, Lightbulb } from 'lucide-react';
+import { CheckCircle, XCircle, TrendingUp, Brain, Target, Lightbulb, ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils.js';
 
-const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes }) => {
+const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes, onReturnToCourses }) => {
+  const [openSections, setOpenSections] = useState({
+    weaknesses: false,
+    topic: false,
+    skill: true,
+  });
+  const gradedQuestionsCount = Number(results.gradedQuestionsCount || 0);
+  const incorrectAnswers = Math.max(0, gradedQuestionsCount - Number(results.correctAnswers || 0));
+  const hasManualReviewItems = gradedQuestionsCount < Number(results.totalQuestions || 0);
+  const hasWeaknesses = Array.isArray(results.weaknesses) && results.weaknesses.length > 0;
+  const topicBreakdown = Array.isArray(results.topicBreakdown) ? results.topicBreakdown : [];
+  const skillBreakdownEntries = Object.entries(results.skillBreakdown || {});
+
   const getScoreColor = (score) => {
     if (score >= 90) return 'text-green-600 dark:text-green-400';
     if (score >= 75) return 'text-blue-600 dark:text-blue-400';
@@ -19,9 +32,15 @@ const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes }) => {
     return 'Keep Practicing!';
   };
 
+  const toggleSection = (sectionKey) => {
+    setOpenSections((previous) => ({
+      ...previous,
+      [sectionKey]: !previous[sectionKey],
+    }));
+  };
+
   return (
     <div className="space-y-4 md:space-y-6">
-      {/* Overall Score */}
       <Card className="border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-white dark:from-slate-900 dark:to-slate-900 dark:border-indigo-900">
         <CardContent className="p-6 md:p-8">
           <div className="text-center">
@@ -39,92 +58,131 @@ const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes }) => {
               </div>
               <div className="flex items-center gap-2">
                 <XCircle className="h-5 w-5 text-red-600 dark:text-red-500" />
-                <span>{results.totalQuestions - results.correctAnswers} Incorrect</span>
+                <span>{incorrectAnswers} Incorrect</span>
               </div>
             </div>
+            {hasManualReviewItems ? (
+              <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
+                {results.totalQuestions - gradedQuestionsCount} question(s) require manual review and are excluded from score.
+              </p>
+            ) : null}
           </div>
         </CardContent>
       </Card>
 
-      {/* Weaknesses */}
-      {results.weaknesses.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900 mb-3 flex items-center gap-2 dark:text-slate-100">
-            <TrendingUp className="h-5 w-5 text-amber-600 dark:text-amber-500" />
-            Areas for Improvement
-          </h2>
-          <div className="flex flex-col gap-3">
-            {results.weaknesses.map((weakness, index) => (
-              <WeaknessCard
-                key={index}
-                topic={weakness.topic}
-                accuracy={weakness.accuracy}
-              />
-            ))}
-          </div>
-        </div>
+      {hasWeaknesses && (
+        <Card>
+          <CardHeader className="pb-4">
+            <button
+              type="button"
+              onClick={() => toggleSection('weaknesses')}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                  <TrendingUp className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+                  Areas for Improvement
+                </CardTitle>
+                <CardDescription>Topics below target accuracy</CardDescription>
+              </div>
+              <ChevronDown className={cn('h-5 w-5 text-slate-600 transition-transform dark:text-slate-400', openSections.weaknesses && 'rotate-180')} />
+            </button>
+          </CardHeader>
+          {openSections.weaknesses && (
+            <CardContent>
+              <div className="flex flex-col gap-3">
+                {results.weaknesses.map((weakness, index) => (
+                  <WeaknessCard
+                    key={index}
+                    topic={weakness.topic}
+                    accuracy={weakness.accuracy}
+                  />
+                ))}
+              </div>
+            </CardContent>
+          )}
+        </Card>
       )}
 
-      {/* Topic Breakdown */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
-            <Target className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-            Topic Breakdown
-          </CardTitle>
-          <CardDescription>Performance by topic area</CardDescription>
+        <CardHeader className="pb-4">
+          <button
+            type="button"
+            onClick={() => toggleSection('topic')}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                <Target className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                Topic Breakdown
+              </CardTitle>
+              <CardDescription>Performance by topic area</CardDescription>
+            </div>
+            <ChevronDown className={cn('h-5 w-5 text-slate-600 transition-transform dark:text-slate-400', openSections.topic && 'rotate-180')} />
+          </button>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {results.topicBreakdown.map((topic, index) => (
-              <div key={index}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-slate-900 dark:text-slate-200">{topic.topic}</span>
-                  <span className="text-sm text-slate-600 dark:text-slate-400">
-                    {topic.correct}/{topic.total} ({topic.accuracy}%)
-                  </span>
+        {openSections.topic && (
+          <CardContent>
+            <div className="space-y-4">
+              {topicBreakdown.map((topic, index) => (
+                <div key={index}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-200">{topic.topic}</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      {topic.correct}/{topic.total} ({topic.accuracy}%)
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2 dark:bg-slate-700">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        topic.accuracy >= 75 ? 'bg-green-500' :
+                        topic.accuracy >= 60 ? 'bg-blue-500' :
+                        topic.accuracy >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${topic.accuracy}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="w-full bg-slate-200 rounded-full h-2 dark:bg-slate-700">
-                  <div
-                    className={`h-2 rounded-full transition-all ${
-                      topic.accuracy >= 75 ? 'bg-green-500' :
-                      topic.accuracy >= 60 ? 'bg-blue-500' :
-                      topic.accuracy >= 50 ? 'bg-amber-500' : 'bg-red-500'
-                    }`}
-                    style={{ width: `${topic.accuracy}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
+              ))}
+            </div>
+          </CardContent>
+        )}
       </Card>
 
-      {/* Skill Breakdown */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
-            <Brain className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-            Skill Category Analysis
-          </CardTitle>
-          <CardDescription>Performance by cognitive skill level</CardDescription>
+        <CardHeader className="pb-4">
+          <button
+            type="button"
+            onClick={() => toggleSection('skill')}
+            className="w-full flex items-center justify-between text-left"
+          >
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
+                <Brain className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                Skill Category Analysis
+              </CardTitle>
+              <CardDescription>Performance by cognitive skill level</CardDescription>
+            </div>
+            <ChevronDown className={cn('h-5 w-5 text-slate-600 transition-transform dark:text-slate-400', openSections.skill && 'rotate-180')} />
+          </button>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-            {Object.entries(results.skillBreakdown).map(([skill, data]) => (
-              <div key={skill} className="p-3 md:p-4 bg-slate-50 rounded-lg border border-slate-200 dark:bg-slate-900 dark:border-slate-800">
-                <p className="text-sm font-medium text-slate-600 capitalize mb-1 md:mb-2 dark:text-slate-400">{skill}</p>
-                <p className="text-xl md:text-2xl font-bold text-slate-900 mb-1 dark:text-slate-100">{data.accuracy}%</p>
-                <p className="text-xs text-slate-500 dark:text-slate-500">
-                  {data.correct} of {data.total} correct
-                </p>
-              </div>
-            ))}
-          </div>
-        </CardContent>
+        {openSections.skill && (
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+              {skillBreakdownEntries.map(([skill, data]) => (
+                <div key={skill} className="p-3 md:p-4 bg-slate-50 rounded-lg border border-slate-200 dark:bg-slate-900 dark:border-slate-800">
+                  <p className="text-sm font-medium text-slate-600 capitalize mb-1 md:mb-2 dark:text-slate-400">{skill}</p>
+                  <p className="text-xl md:text-2xl font-bold text-slate-900 mb-1 dark:text-slate-100">{data.accuracy}%</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-500">
+                    {data.correct} of {data.total} correct
+                  </p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        )}
       </Card>
 
-      {/* Diagnosis */}
       <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-900">
         <CardContent className="p-4 md:p-6">
           <div className="flex gap-3">
@@ -137,13 +195,19 @@ const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes }) => {
         </CardContent>
       </Card>
 
-      {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center pt-4">
         <Button
           onClick={onReviewAnswers}
           className="w-full sm:w-auto min-h-[3rem] md:min-h-[2.5rem] bg-indigo-600 hover:bg-indigo-700 text-white text-base dark:bg-indigo-500 dark:hover:bg-indigo-600"
         >
           Review Answers
+        </Button>
+        <Button
+          onClick={onReturnToCourses}
+          variant="outline"
+          className="w-full sm:w-auto min-h-[3rem] md:min-h-[2.5rem] text-slate-700 text-base dark:text-slate-300"
+        >
+          Back to Courses
         </Button>
         <Button
           onClick={onReturnToQuizzes}

@@ -12,6 +12,8 @@ import {
 import {
   clearDevAccessSession,
   getResolvedAuthCredentials,
+  isDevEmailAllowed,
+  isDevFeatureConfigEnabled,
   isDevCredentialMatch,
   readDevAccessSession,
   writeDevAccessSession,
@@ -25,6 +27,7 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isDevFeaturesEnabled, setIsDevFeaturesEnabled] = useState(false);
+  const [canToggleDevFeatures, setCanToggleDevFeatures] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -33,6 +36,7 @@ export const AuthProvider = ({ children }) => {
         setToken(null);
         setIsAuthenticated(false);
         setIsDevFeaturesEnabled(false);
+        setCanToggleDevFeatures(false);
         setIsLoading(false);
         return;
       }
@@ -57,16 +61,22 @@ export const AuthProvider = ({ children }) => {
 
         const savedSession = readDevAccessSession();
         const hasMatchingDevSession =
-          Boolean(savedSession?.enabled) &&
           Boolean(savedSession?.uid) &&
           savedSession.uid === firebaseUser.uid;
-        setIsDevFeaturesEnabled(hasMatchingDevSession);
+        const devSessionEmail = savedSession?.email || firebaseUser.email || '';
+        const hasDevAccess =
+          hasMatchingDevSession &&
+          isDevFeatureConfigEnabled &&
+          isDevEmailAllowed(devSessionEmail);
+        setCanToggleDevFeatures(hasDevAccess);
+        setIsDevFeaturesEnabled(hasDevAccess && Boolean(savedSession?.enabled));
       } catch (error) {
         console.error('Failed to restore auth state:', error);
         setUser(null);
         setToken(null);
         setIsAuthenticated(false);
         setIsDevFeaturesEnabled(false);
+        setCanToggleDevFeatures(false);
       } finally {
         setIsLoading(false);
       }
@@ -86,6 +96,7 @@ export const AuthProvider = ({ children }) => {
       const devEnabled = isDevCredentialMatch(email, password);
       writeDevAccessSession({ enabled: devEnabled, email, uid: response.user.uid });
       setIsDevFeaturesEnabled(devEnabled);
+      setCanToggleDevFeatures(isDevFeatureConfigEnabled && isDevEmailAllowed(email));
 
       return { success: true };
     } catch (error) {
@@ -102,6 +113,7 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       writeDevAccessSession({ enabled: false, email, uid: response.user.uid });
       setIsDevFeaturesEnabled(false);
+      setCanToggleDevFeatures(false);
 
       return { success: true };
     } catch (error) {
@@ -130,8 +142,22 @@ export const AuthProvider = ({ children }) => {
       setToken(null);
       setIsAuthenticated(false);
       setIsDevFeaturesEnabled(false);
+      setCanToggleDevFeatures(false);
       clearDevAccessSession();
     }
+  };
+
+  const toggleDevFeatures = () => {
+    if (!canToggleDevFeatures || !user?.uid) return;
+
+    const currentSession = readDevAccessSession();
+    const nextEnabled = !isDevFeaturesEnabled;
+    writeDevAccessSession({
+      enabled: nextEnabled,
+      email: currentSession?.email || user.email || '',
+      uid: user.uid,
+    });
+    setIsDevFeaturesEnabled(nextEnabled);
   };
 
   const value = {
@@ -140,6 +166,8 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     isLoading,
     isDevFeaturesEnabled,
+    canToggleDevFeatures,
+    toggleDevFeatures,
     login,
     register,
     updateUserDisplayName,

@@ -52,6 +52,10 @@ const ResultsPage = () => {
     navigate('/quizzes');
   };
 
+  const handleReturnToCourses = () => {
+    navigate('/courses');
+  };
+
   const handleShowDiscussion = (questionId) => {
     setSelectedQuestionId(questionId);
     setActiveTab('discussion');
@@ -118,6 +122,7 @@ const ResultsPage = () => {
                 results={results}
                 onReviewAnswers={handleReviewAnswers}
                 onReturnToQuizzes={handleReturnToQuizzes}
+                onReturnToCourses={handleReturnToCourses}
               />
             </TabsContent>
 

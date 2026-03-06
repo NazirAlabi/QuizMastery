@@ -33,7 +33,7 @@ const AllQuestionsView = ({ questions, answers, onShowDiscussion }) => {
             <QuestionCard
               question={question}
               selectedAnswer={answer?.selectedAnswer}
-              onSelectOption={() => {}}
+              onAnswerChange={() => {}}
               showResult={true}
             />
             

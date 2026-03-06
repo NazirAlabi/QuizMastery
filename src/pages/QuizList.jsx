@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
+import { Input } from '@/components/ui/input.jsx';
 import { getQuizzes, startAttempt } from '@/api/api.js';
 import { useAuth } from '@/hooks/useAuth.js';
-import { Clock, BookOpen, Play } from 'lucide-react';
+import { Clock, BookOpen, Play, Search, X } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast.jsx';
 
 const QuizList = () => {
@@ -16,9 +17,29 @@ const QuizList = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [startingQuiz, setStartingQuiz] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const { user, isDevFeaturesEnabled } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const filteredQuizzes = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    if (!normalizedSearch) return quizzes;
+
+    return quizzes.filter((quiz) => {
+      const haystack = [
+        quiz.title,
+        quiz.description,
+        quiz.topic,
+        quiz.difficulty,
+        quiz.id,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [quizzes, searchQuery]);
 
   useEffect(() => {
     loadQuizzes();
@@ -113,6 +134,29 @@ const QuizList = () => {
             </p>
           </div>
 
+          <div className="mb-6">
+            <div className="relative max-w-xl">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search quizzes by title, topic, description, or ID"
+                className="pl-9 pr-10"
+              />
+              {searchQuery ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
           {isDevFeaturesEnabled && (
             <Card className="mb-6 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
               <CardHeader className="pb-2">
@@ -127,18 +171,22 @@ const QuizList = () => {
           )}
 
           <div className="flex flex-wrap gap-4 md:gap-6">
-            {quizzes.map((quiz) => (
+            {filteredQuizzes.map((quiz) => (
               <Card key={quiz.id} className="max-w-md hover:shadow-lg transition-shadow flex flex-col h-full dark:hover:shadow-slate-800/50">
-                <CardHeader className="pb-3">
+                <CardHeader className="pb-3 min-h-[128px]">
                   <div className="flex items-start justify-between mb-2 gap-2">
-                    <CardTitle className="text-lg md:text-xl leading-tight">{quiz.title}</CardTitle>
+                    <CardTitle className="text-lg md:text-xl leading-tight">
+                      <Link to={`/quizzes/${quiz.id}`} className="hover:text-indigo-700 dark:hover:text-indigo-300">
+                        {quiz.title}
+                      </Link>
+                    </CardTitle>
                     <Badge variant={getDifficultyVariant(quiz.difficulty)} className="shrink-0">
                       {quiz.difficulty}
                     </Badge>
                   </div>
                   <CardDescription className="text-sm md:text-base line-clamp-2">{quiz.description}</CardDescription>
                 </CardHeader>
-                <CardContent className="mt-auto pt-0">
+                <CardContent className="mt-auto flex flex-col pt-0">
                   <div className="space-y-3 mb-4">
                     <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
                       <BookOpen className="h-4 w-4" />
@@ -161,19 +209,28 @@ const QuizList = () => {
                   <Button
                     onClick={() => handleStartQuiz(quiz)}
                     disabled={startingQuiz === quiz.id}
-                    className="w-full min-h-[2.75rem] md:min-h-[2.5rem] bg-indigo-600 hover:bg-indigo-700 text-white text-base dark:bg-indigo-500 dark:hover:bg-indigo-600"
+                    className={`${isDevFeaturesEnabled ? 'w-full' : 'w-48 self-center'} min-h-[2.75rem] md:min-h-[2.5rem] bg-indigo-600 hover:bg-indigo-700 text-white text-base dark:bg-indigo-500 dark:hover:bg-indigo-600`}
                   >
                     <Play className="h-5 w-5 md:h-4 md:w-4 mr-2 hover:fill-white" />
                     {startingQuiz === quiz.id
                       ? 'Starting...'
                       : isDevFeaturesEnabled
                         ? `Start Quiz (${quiz.id})`
-                        : 'Start Quiz'}
+                        : 'Start Quiz'
+                    }
                   </Button>
                 </CardContent>
               </Card>
             ))}
           </div>
+
+          {filteredQuizzes.length === 0 ? (
+            <Card className="mt-6">
+              <CardContent className="py-8 text-center text-slate-600 dark:text-slate-400">
+                No quizzes match your search.
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       </div>
     </>

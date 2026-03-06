@@ -176,6 +176,10 @@ service cloud.firestore {
       allow delete: if isSignedIn();
     }
 
+    match /questionDiscussions/{discussionId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
     match /userAttempts/{attemptId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;

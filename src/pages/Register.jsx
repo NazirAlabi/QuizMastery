@@ -49,7 +49,7 @@ const Register = () => {
         title: 'Account created!',
         description: 'Welcome to QuizMaster',
       });
-      navigate('/quizzes');
+      navigate('/courses');
     } else {
       toast({
         title: 'Registration Failed',

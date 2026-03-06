@@ -27,10 +27,17 @@ const normalizeAnswer = (value, metadata = {}) => {
   return normalized;
 };
 
+const getQuestionType = (question) => String(question?.type || '').toLowerCase();
+
+export const isQuestionAutoGraded = (question) => {
+  const type = getQuestionType(question);
+  return ['mcq', 'short_answer', 'numeric'].includes(type);
+};
+
 export const evaluateAnswer = (question, userAnswer) => {
   if (!question) return false;
   const metadata = question.metadata || {};
-  const type = String(question.type || '').toLowerCase();
+  const type = getQuestionType(question);
 
   if (type === 'mcq') {
     const correctAnswer = metadata.correct_answer ?? metadata.correctOption ?? '';
@@ -61,6 +68,11 @@ export const evaluateAnswer = (question, userAnswer) => {
     }
 
     return submitted === expected;
+  }
+
+  if (type === 'long_answer') {
+    // Long answers require manual grading.
+    return null;
   }
 
   return false;

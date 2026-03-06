@@ -28,7 +28,7 @@ const Login = () => {
         title: 'Welcome back!',
         description: 'Successfully logged in',
       });
-      navigate('/quizzes');
+      navigate('/courses');
     } else {
       toast({
         title: 'Login Failed',

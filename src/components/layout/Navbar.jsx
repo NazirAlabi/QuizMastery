@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth.js';
 import { useTheme } from '@/context/ThemeContext.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { GraduationCap, LogOut, Menu, X, Sun, Moon, Wrench, Settings } from 'lucide-react';
+import { GraduationCap, BookOpen, LogOut, Menu, X, Sun, Moon, Wrench, Settings } from 'lucide-react';
 
 const getRelativeTimeGreeting = (date = new Date()) => {
   const hour = date.getHours();
@@ -14,7 +14,7 @@ const getRelativeTimeGreeting = (date = new Date()) => {
 };
 
 const Navbar = ({ onOpenSettings }) => {
-  const { user, logout, isDevFeaturesEnabled } = useAuth();
+  const { user, logout, isDevFeaturesEnabled, canToggleDevFeatures, toggleDevFeatures } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -64,13 +64,37 @@ const Navbar = ({ onOpenSettings }) => {
                 Quizzes
               </Button>
             </Link>
+            <Link to="/courses">
+              <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
+                <BookOpen className="h-4 w-4 mr-2" />
+                Courses
+              </Button>
+            </Link>
+            {isDevFeaturesEnabled && (
+              <Link to="/dev/content">
+                <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
+                  <Wrench className="h-4 w-4 mr-2" />
+                  Content
+                </Button>
+              </Link>
+            )}
 
             <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-slate-800">
-              {isDevFeaturesEnabled && (
-                <Badge className="bg-amber-600 hover:bg-amber-600 text-white">
+              {canToggleDevFeatures && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={toggleDevFeatures}
+                  className={
+                    isDevFeaturesEnabled
+                      ? 'border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200 dark:border-amber-800 dark:bg-amber-950/40 dark:hover:bg-amber-950/70 dark:hover:border-amber-600 dark:text-amber-300'
+                      : 'border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                  }
+                >
                   <Wrench className="h-3 w-3 mr-1" />
-                  Dev Features On
-                </Badge>
+                  {isDevFeaturesEnabled ? 'Dev Features On' : 'Dev Features Off'}
+                </Button>
               )}
               <Button
                 variant="ghost"
@@ -138,11 +162,21 @@ const Navbar = ({ onOpenSettings }) => {
               <p className="text-xs text-slate-500 dark:text-slate-400">Signed in as</p>
               <p className="font-medium text-slate-900 truncate dark:text-slate-200">{user?.email}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">{user?.displayName || 'No display name'}</p>
-              {isDevFeaturesEnabled && (
-                <Badge className="mt-2 bg-amber-600 hover:bg-amber-600 text-white">
+              {canToggleDevFeatures && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={toggleDevFeatures}
+                  className={
+                    isDevFeaturesEnabled
+                      ? 'mt-2 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300'
+                      : 'mt-2 border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+                  }
+                >
                   <Wrench className="h-3 w-3 mr-1" />
-                  Dev Features On
-                </Badge>
+                  {isDevFeaturesEnabled ? 'Dev Features On' : 'Dev Features Off'}
+                </Button>
               )}
             </div>
             
@@ -156,6 +190,28 @@ const Navbar = ({ onOpenSettings }) => {
                 Quizzes
               </Button>
             </Link>
+            <Link
+              to="/courses"
+              onClick={() => setIsMenuOpen(false)}
+              className="block"
+            >
+              <Button variant="ghost" className="w-full justify-start text-slate-700 hover:text-indigo-700 h-12 text-base dark:text-slate-300 dark:hover:text-indigo-400">
+                <BookOpen className="h-5 w-5 mr-3" />
+                Courses
+              </Button>
+            </Link>
+            {isDevFeaturesEnabled && (
+              <Link
+                to="/dev/content"
+                onClick={() => setIsMenuOpen(false)}
+                className="block"
+              >
+                <Button variant="ghost" className="w-full justify-start text-slate-700 hover:text-indigo-700 h-12 text-base dark:text-slate-300 dark:hover:text-indigo-400">
+                  <Wrench className="h-5 w-5 mr-3" />
+                  Content Dashboard
+                </Button>
+              </Link>
+            )}
 
             {canOpenSettings && (
               <Button
