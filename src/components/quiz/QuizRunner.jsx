@@ -326,17 +326,17 @@ const QuizRunner = ({ quiz, attemptId }) => {
           </div>
         </div>
         <div className="text-sm text-slate-600 font-medium dark:text-slate-300">
-          {answeredCount} / {totalQuestions} answered | {markedCount} marked | {timerLabel}
+          {answeredCount} / {totalQuestions} answered {markedCount > 0 ? `| ${markedCount} marked` : ''} | {timerLabel}
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap justify-end gap-2">
+      <div className="mb-4 flex flex-wrap justify-between md:justify-end gap-2">
         {allowBreaks ? (
           <Button
             variant="outline"
             onClick={() => setIsOnBreak((previous) => !previous)}
             disabled={isSubmitting || isQuitting}
-            className="min-h-[2.5rem]"
+            className="py-1 px-2 bg-black/20 dark:bg-white/20 md:bg-none md:p-0 md:min-h-[2.5rem]"
           >
             {isOnBreak ? (
               <>
@@ -364,7 +364,7 @@ const QuizRunner = ({ quiz, attemptId }) => {
           variant="destructive"
           onClick={handleQuitQuiz}
           disabled={isInteractionLocked}
-          className="min-h-[2.5rem] text-white dark:text-slate-100"
+          className="min-h-[2.5rem] text-white dark:text-slate-100 hidden md:block"
         >
           <XCircle className="h-4 w-4 mr-2" />
           {isQuitting ? 'Quitting...' : 'Quit Quiz'}
@@ -393,7 +393,7 @@ const QuizRunner = ({ quiz, attemptId }) => {
         />
       )}
 
-      <div className="mt-6 flex flex-col-reverse md:flex-row items-center justify-between gap-3 md:gap-0">
+      <div className="mt-6 flex flex-row items-center justify-between gap-3 md:gap-0">
         <Button
           variant="outline"
           onClick={handlePrevious}
@@ -460,6 +460,15 @@ const QuizRunner = ({ quiz, attemptId }) => {
           Green = answered | Amber = marked for review
         </p> */}
       </div>
+        <Button
+          variant="destructive"
+          onClick={handleQuitQuiz}
+          disabled={isInteractionLocked}
+          className="mt-12 min-h-[2.5rem] text-white dark:text-slate-100 md:hidden"
+        >
+          <XCircle className="h-4 w-4 mr-2" />
+          {isQuitting ? 'Quitting...' : 'Quit Quiz'}
+        </Button>
     </div>
   );
 };
