@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, createElement } from 'react';
+import { createContext, useCallback, useContext, useState, useEffect, createElement, useMemo } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth } from '@/firebase/client.js';
@@ -85,7 +85,7 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     try {
       const authCredentials = getResolvedAuthCredentials(email, password);
       const response = await apiLogin(authCredentials.email, authCredentials.password);
@@ -102,9 +102,9 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       return { success: false, error: error.message };
     }
-  };
+  }, []);
 
-  const register = async (email, password, displayName = '') => {
+  const register = useCallback(async (email, password, displayName = '') => {
     try {
       const response = await apiRegister(email, password, displayName);
       
@@ -119,9 +119,9 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       return { success: false, error: error.message };
     }
-  };
+  }, []);
 
-  const updateUserDisplayName = async (displayName) => {
+  const updateUserDisplayName = useCallback(async (displayName) => {
     try {
       const updatedUser = await apiUpdateUserDisplayName(displayName);
       setUser((previous) => ({
@@ -132,9 +132,9 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       return { success: false, error: error.message };
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await apiLogout();
     } finally {
@@ -145,9 +145,9 @@ export const AuthProvider = ({ children }) => {
       setCanToggleDevFeatures(false);
       clearDevAccessSession();
     }
-  };
+  }, []);
 
-  const toggleDevFeatures = () => {
+  const toggleDevFeatures = useCallback(() => {
     if (!canToggleDevFeatures || !user?.uid) return;
 
     const currentSession = readDevAccessSession();
@@ -158,21 +158,36 @@ export const AuthProvider = ({ children }) => {
       uid: user.uid,
     });
     setIsDevFeaturesEnabled(nextEnabled);
-  };
+  }, [canToggleDevFeatures, isDevFeaturesEnabled, user?.email, user?.uid]);
 
-  const value = {
-    user,
-    token,
-    isAuthenticated,
-    isLoading,
-    isDevFeaturesEnabled,
-    canToggleDevFeatures,
-    toggleDevFeatures,
-    login,
-    register,
-    updateUserDisplayName,
-    logout
-  };
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      isAuthenticated,
+      isLoading,
+      isDevFeaturesEnabled,
+      canToggleDevFeatures,
+      toggleDevFeatures,
+      login,
+      register,
+      updateUserDisplayName,
+      logout,
+    }),
+    [
+      canToggleDevFeatures,
+      isAuthenticated,
+      isDevFeaturesEnabled,
+      isLoading,
+      login,
+      logout,
+      register,
+      toggleDevFeatures,
+      token,
+      updateUserDisplayName,
+      user,
+    ]
+  );
 
   return createElement(AuthContext.Provider, { value }, children);
 };

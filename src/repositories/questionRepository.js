@@ -5,8 +5,11 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit as limitTo,
+  orderBy,
   query,
   serverTimestamp,
+  startAfter,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -122,12 +125,36 @@ const validateQuestionPayload = (question) => {
 };
 
 class QuestionRepository {
-  async getQuestions() {
-    const snapshot = await getDocs(questionsCollection);
-    return snapshot.docs.map((questionDoc) => ({
+  mapQuestion(questionDoc) {
+    return {
       id: questionDoc.id,
       ...questionDoc.data(),
-    }));
+    };
+  }
+
+  async getQuestions(limitCount = null, lastDoc = null) {
+    const normalizedLimit = Number(limitCount);
+    const shouldPaginate = Number.isFinite(normalizedLimit) && normalizedLimit > 0;
+
+    if (!shouldPaginate) {
+      const snapshot = await getDocs(questionsCollection);
+      return snapshot.docs.map((questionDoc) => this.mapQuestion(questionDoc));
+    }
+
+    const constraints = [orderBy('createdAt', 'desc')];
+    if (lastDoc) constraints.push(startAfter(lastDoc));
+    constraints.push(limitTo(normalizedLimit));
+
+    const paginatedQuery = query(questionsCollection, ...constraints);
+    const snapshot = await getDocs(paginatedQuery);
+    const questions = snapshot.docs.map((questionDoc) => this.mapQuestion(questionDoc));
+    const nextLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+
+    return {
+      items: questions,
+      lastDoc: nextLastDoc,
+      hasMore: snapshot.docs.length === normalizedLimit,
+    };
   }
 
   async getQuestionById(questionId) {

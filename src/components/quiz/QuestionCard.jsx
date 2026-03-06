@@ -177,4 +177,4 @@ const QuestionCard = ({ question, selectedAnswer, onAnswerChange, showResult = f
   );
 };
 
-export default QuestionCard;
+export default React.memo(QuestionCard);

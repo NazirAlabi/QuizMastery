@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BookOpen, Clock, Play } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -9,7 +10,10 @@ import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
-import { getQuizPageById, startAttempt } from '@/api/api.js';
+import { getCoursePageById } from '@/api/api.js';
+import { useQuizPage } from '@/hooks/useQuizPage.js';
+import { useStartAttempt } from '@/hooks/useStartAttempt.js';
+import { queryKeys } from '@/hooks/queryKeys.js';
 
 const buildQuizDescriptionDetail = (quiz, associatedCourses) => {
   const baseDescription = String(quiz?.description || '').trim() || 'No quiz description provided.';
@@ -30,32 +34,28 @@ const QuizDetailPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, isDevFeaturesEnabled } = useAuth();
+  const queryClient = useQueryClient();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
-  const [quiz, setQuiz] = useState(null);
-  const [associatedCourses, setAssociatedCourses] = useState([]);
+  const [hasShownLoadError, setHasShownLoadError] = useState(false);
+  const { data: quiz, isLoading, isError } = useQuizPage(id);
+  const startAttemptMutation = useStartAttempt();
+  const associatedCourses = useMemo(
+    () => (Array.isArray(quiz?.associatedCourses) ? quiz.associatedCourses : []),
+    [quiz]
+  );
 
   useEffect(() => {
-    const loadQuizPage = async () => {
-      try {
-        const pageData = await getQuizPageById(id);
-        setQuiz(pageData);
-        setAssociatedCourses(pageData.associatedCourses || []);
-      } catch {
-        toast({
-          title: 'Error',
-          description: 'Failed to load quiz page.',
-          variant: 'destructive',
-        });
-        navigate('/quizzes');
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    if (!isError || hasShownLoadError) return;
 
-    loadQuizPage();
-  }, [id, navigate, toast]);
+    setHasShownLoadError(true);
+    toast({
+      title: 'Error',
+      description: 'Failed to load quiz page.',
+      variant: 'destructive',
+    });
+    navigate('/quizzes');
+  }, [hasShownLoadError, isError, navigate, toast]);
 
   const descriptionDetail = useMemo(
     () => buildQuizDescriptionDetail(quiz, associatedCourses),
@@ -70,11 +70,15 @@ const QuizDetailPage = () => {
     return Object.entries(bucket).sort((a, b) => a[0].localeCompare(b[0]));
   }, [quiz]);
 
-  const handleStartQuiz = async () => {
-    if (!quiz) return;
+  const handleStartQuiz = useCallback(async () => {
+    if (!quiz || !user?.id) return;
+
     setIsStarting(true);
     try {
-      const attempt = await startAttempt(quiz.id, user.id);
+      const attempt = await startAttemptMutation.mutateAsync({
+        quizId: quiz.id,
+        userId: user.id,
+      });
       navigate(`/quiz/${quiz.id}/ready?attemptId=${attempt.id}`, {
         state: {
           quizTitle: quiz.title,
@@ -90,7 +94,18 @@ const QuizDetailPage = () => {
       });
       setIsStarting(false);
     }
-  };
+  }, [navigate, quiz, startAttemptMutation, toast, user?.id]);
+
+  const prefetchCourse = useCallback(
+    (courseId) => {
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.course(courseId),
+        queryFn: () => getCoursePageById(courseId),
+        staleTime: 5 * 60 * 1000,
+      });
+    },
+    [queryClient]
+  );
 
   if (isLoading) {
     return (
@@ -167,7 +182,12 @@ const QuizDetailPage = () => {
               ) : (
                 associatedCourses.map((course) => (
                   <Badge key={course.id} variant="outline" className="gap-2">
-                    <Link to={`/courses/${course.id}`} className="hover:text-indigo-700 dark:hover:text-indigo-300">
+                    <Link
+                      to={`/courses/${course.id}`}
+                      className="hover:text-indigo-700 dark:hover:text-indigo-300"
+                      onMouseEnter={() => prefetchCourse(course.id)}
+                      onFocus={() => prefetchCourse(course.id)}
+                    >
                       {course.title}
                     </Link>
                   </Badge>

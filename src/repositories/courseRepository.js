@@ -5,8 +5,11 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit as limitTo,
+  orderBy,
   query,
   serverTimestamp,
+  startAfter,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -57,17 +60,41 @@ class CourseRepository {
     return quizIds.length;
   }
 
-  async getCourses() {
-    const snapshot = await getDocs(coursesCollection);
-    const courses = snapshot.docs.map((courseDoc) => ({
+  mapCourse(courseDoc) {
+    const course = {
       id: courseDoc.id,
       ...courseDoc.data(),
-    }));
+    };
 
-    return courses.map((course) => ({
+    return {
       ...course,
       quizCount: this.getActiveQuizCount(Array.isArray(course.quizIds) ? course.quizIds : []),
-    }));
+    };
+  }
+
+  async getCourses(limitCount = null, lastDoc = null) {
+    const normalizedLimit = Number(limitCount);
+    const shouldPaginate = Number.isFinite(normalizedLimit) && normalizedLimit > 0;
+
+    if (!shouldPaginate) {
+      const snapshot = await getDocs(coursesCollection);
+      return snapshot.docs.map((courseDoc) => this.mapCourse(courseDoc));
+    }
+
+    const constraints = [orderBy('createdAt', 'desc')];
+    if (lastDoc) constraints.push(startAfter(lastDoc));
+    constraints.push(limitTo(normalizedLimit));
+
+    const paginatedQuery = query(coursesCollection, ...constraints);
+    const snapshot = await getDocs(paginatedQuery);
+    const courses = snapshot.docs.map((courseDoc) => this.mapCourse(courseDoc));
+    const nextLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+
+    return {
+      items: courses,
+      lastDoc: nextLastDoc,
+      hasMore: snapshot.docs.length === normalizedLimit,
+    };
   }
 
   async getCourseByQuizId(quizId) {

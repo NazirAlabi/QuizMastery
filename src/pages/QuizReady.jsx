@@ -6,8 +6,9 @@ import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { configureAttempt, getQuizById } from '@/api/api.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
+import { useQuiz } from '@/hooks/useQuiz.js';
+import { useConfigureAttempt } from '@/hooks/useConfigureAttempt.js';
 
 const SPEED_OPTIONS = [
   { label: '0.5x', value: 0.5 },
@@ -39,6 +40,10 @@ const QuizReady = () => {
   const [isCountdownActive, setIsCountdownActive] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const { toast } = useToast();
+  const shouldFetchQuiz =
+    Boolean(id) && (!quizTitle || questionCount == null || estimatedTime == null);
+  const { data: fetchedQuiz } = useQuiz(id, { enabled: shouldFetchQuiz });
+  const configureAttemptMutation = useConfigureAttempt();
 
   const startPath = useMemo(() => `/quiz/${id}?attemptId=${attemptId}`, [id, attemptId]);
   const baseDurationSeconds = useMemo(() => {
@@ -58,34 +63,19 @@ const QuizReady = () => {
   }, [attemptId, navigate]);
 
   useEffect(() => {
-    if (!id) return;
-    if (quizTitle && questionCount != null && estimatedTime != null) return;
+    if (!shouldFetchQuiz) return;
+    if (!fetchedQuiz) return;
 
-    let isMounted = true;
-    getQuizById(id)
-      .then((quiz) => {
-        if (isMounted) {
-          if (!quizTitle) {
-            setQuizTitle(quiz?.title || 'Your Quiz');
-          }
-          if (questionCount == null) {
-            setQuestionCount(Number(quiz?.questionCount || 0));
-          }
-          if (estimatedTime == null) {
-            setEstimatedTime(Number(quiz?.estimatedTime || 0));
-          }
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          if (!quizTitle) setQuizTitle('Your Quiz');
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [estimatedTime, id, questionCount, quizTitle]);
+    if (!quizTitle) {
+      setQuizTitle(fetchedQuiz?.title || 'Your Quiz');
+    }
+    if (questionCount == null) {
+      setQuestionCount(Number(fetchedQuiz?.questionCount || 0));
+    }
+    if (estimatedTime == null) {
+      setEstimatedTime(Number(fetchedQuiz?.estimatedTime || 0));
+    }
+  }, [estimatedTime, fetchedQuiz, questionCount, quizTitle, shouldFetchQuiz]);
 
   useEffect(() => {
     if (!attemptId || !isCountdownActive) return;
@@ -114,17 +104,23 @@ const QuizReady = () => {
     setCountdown(3);
     setIsCountdownActive(true);
 
-    configureAttempt(attemptId, {
-      mode,
-      speedMultiplier,
-      allowBreaks,
-    }).catch((error) => {
-      toast({
-        title: 'Warning',
-        description: error?.message || 'Attempt setup was slow. Applying defaults.',
-        variant: 'destructive',
-      });
-    });
+    configureAttemptMutation.mutate(
+      {
+        attemptId,
+        mode,
+        speedMultiplier,
+        allowBreaks,
+      },
+      {
+        onError: (error) => {
+          toast({
+            title: 'Warning',
+            description: error?.message || 'Attempt setup was slow. Applying defaults.',
+            variant: 'destructive',
+          });
+        },
+      }
+    );
   };
 
   return (

@@ -29,6 +29,7 @@ import {
   updateAdminQuestion,
   updateAdminQuiz,
 } from '@/api/api.js';
+import { measureAsync } from '@/utils/performance.js';
 
 const COURSE_DEFAULTS = {
   title: '',
@@ -142,6 +143,7 @@ const toQuestionUploadEntry = (question) => ({
   explanation: String(question?.explanation || ''),
 });
 const DEDUPE_IDLE_MESSAGE = 'Ready to scan for strict semantic duplicates.';
+const DASHBOARD_SELECT_PAGE_SIZE = 150;
 
 const DevContentDashboard = () => {
   const { isDevFeaturesEnabled } = useAuth();
@@ -170,6 +172,9 @@ const DevContentDashboard = () => {
   const [dedupeProgress, setDedupeProgress] = useState(0);
   const [dedupeStatus, setDedupeStatus] = useState(DEDUPE_IDLE_MESSAGE);
   const [dedupeLogs, setDedupeLogs] = useState([DEDUPE_IDLE_MESSAGE]);
+  const [visibleCourseCount, setVisibleCourseCount] = useState(DASHBOARD_SELECT_PAGE_SIZE);
+  const [visibleQuizCount, setVisibleQuizCount] = useState(DASHBOARD_SELECT_PAGE_SIZE);
+  const [visibleQuestionCount, setVisibleQuestionCount] = useState(DASHBOARD_SELECT_PAGE_SIZE);
 
   const selectedCourse = useMemo(
     () => courses.find((course) => course.id === selectedCourseId) || null,
@@ -213,6 +218,21 @@ const DevContentDashboard = () => {
       ),
     [questions]
   );
+  const visibleSortedCourses = useMemo(
+    () => sortedCourses.slice(0, visibleCourseCount),
+    [sortedCourses, visibleCourseCount]
+  );
+  const visibleSortedQuizzes = useMemo(
+    () => sortedQuizzes.slice(0, visibleQuizCount),
+    [sortedQuizzes, visibleQuizCount]
+  );
+  const visibleSortedQuestions = useMemo(
+    () => sortedQuestions.slice(0, visibleQuestionCount),
+    [sortedQuestions, visibleQuestionCount]
+  );
+  const hasMoreCourses = visibleSortedCourses.length < sortedCourses.length;
+  const hasMoreQuizzes = visibleSortedQuizzes.length < sortedQuizzes.length;
+  const hasMoreQuestions = visibleSortedQuestions.length < sortedQuestions.length;
   const selectedQuizCourseIds = useMemo(
     () =>
       selectedQuiz
@@ -239,7 +259,9 @@ const DevContentDashboard = () => {
   const loadAllContent = async () => {
     setIsLoading(true);
     try {
-      const snapshot = await getAdminContentSnapshot();
+      const snapshot = await measureAsync('query:admin-content-snapshot', () =>
+        getAdminContentSnapshot()
+      );
       setCourses(snapshot.courses || []);
       setQuizzes(snapshot.quizzes || []);
       setQuestions(snapshot.questions || []);
@@ -318,6 +340,18 @@ const DevContentDashboard = () => {
   useEffect(() => {
     setBulkCourseToAddId('');
   }, [bulkForm.selectedQuizId]);
+
+  useEffect(() => {
+    setVisibleCourseCount(DASHBOARD_SELECT_PAGE_SIZE);
+  }, [courses.length]);
+
+  useEffect(() => {
+    setVisibleQuizCount(DASHBOARD_SELECT_PAGE_SIZE);
+  }, [quizzes.length]);
+
+  useEffect(() => {
+    setVisibleQuestionCount(DASHBOARD_SELECT_PAGE_SIZE);
+  }, [questions.length]);
 
   if (!isDevFeaturesEnabled) {
     return <Navigate to="/quizzes" replace />;
@@ -800,12 +834,26 @@ const DevContentDashboard = () => {
                           onChange={(event) => setSelectedCourseId(event.target.value)}
                         >
                           <option value="">Create new course</option>
-                          {sortedCourses.map((course) => (
+                          {visibleSortedCourses.map((course) => (
                             <option key={course.id} value={course.id}>
                               {course.title} ({course.id}) {course.isArchived ? '[archived]' : ''}
                             </option>
                           ))}
                         </select>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Showing {visibleSortedCourses.length} of {sortedCourses.length} courses.
+                        </p>
+                        {hasMoreCourses ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => setVisibleCourseCount((previous) => previous + DASHBOARD_SELECT_PAGE_SIZE)}
+                          >
+                            Load more courses
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
 
@@ -928,12 +976,26 @@ const DevContentDashboard = () => {
                           onChange={(event) => setSelectedQuizId(event.target.value)}
                         >
                           <option value="">Create new quiz</option>
-                          {sortedQuizzes.map((quiz) => (
+                          {visibleSortedQuizzes.map((quiz) => (
                             <option key={quiz.id} value={quiz.id}>
                               {quiz.title} ({quiz.id}) {quiz.isArchived ? '[archived]' : ''}
                             </option>
                           ))}
                         </select>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Showing {visibleSortedQuizzes.length} of {sortedQuizzes.length} quizzes.
+                        </p>
+                        {hasMoreQuizzes ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => setVisibleQuizCount((previous) => previous + DASHBOARD_SELECT_PAGE_SIZE)}
+                          >
+                            Load more quizzes
+                          </Button>
+                        ) : null}
                       </div>
                       <div>
                         <Label>Course IDs (display-only)</Label>
@@ -1060,12 +1122,26 @@ const DevContentDashboard = () => {
                               onChange={(event) => setQuestionToAddId(event.target.value)}
                             >
                               <option value="">Select question</option>
-                              {sortedQuestions.map((question) => (
+                              {visibleSortedQuestions.map((question) => (
                                 <option key={question.id} value={question.id}>
                                   {formatQuestionLabel(question)}
                                 </option>
                               ))}
                             </select>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              Showing {visibleSortedQuestions.length} of {sortedQuestions.length} questions.
+                            </p>
+                            {hasMoreQuestions ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="mt-2"
+                                onClick={() => setVisibleQuestionCount((previous) => previous + DASHBOARD_SELECT_PAGE_SIZE)}
+                              >
+                                Load more questions
+                              </Button>
+                            ) : null}
                           </div>
                           <Button variant="outline" onClick={handleAddQuestionToQuiz} disabled={isSaving || !questionToAddId}>
                             Add question
@@ -1158,12 +1234,26 @@ const DevContentDashboard = () => {
                         onChange={(event) => setSelectedQuestionId(event.target.value)}
                       >
                         <option value="">Create new question</option>
-                        {sortedQuestions.map((question) => (
+                        {visibleSortedQuestions.map((question) => (
                           <option key={question.id} value={question.id}>
                             {formatQuestionLabel(question)} {question.isArchived ? '[archived]' : ''}
                           </option>
                         ))}
                       </select>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Showing {visibleSortedQuestions.length} of {sortedQuestions.length} questions.
+                      </p>
+                      {hasMoreQuestions ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                          onClick={() => setVisibleQuestionCount((previous) => previous + DASHBOARD_SELECT_PAGE_SIZE)}
+                        >
+                          Load more questions
+                        </Button>
+                      ) : null}
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
                       <div>
@@ -1278,12 +1368,26 @@ const DevContentDashboard = () => {
                           onChange={(event) => handleSelectBulkQuiz(event.target.value)}
                         >
                           <option value="">Create new quiz from upload</option>
-                          {sortedQuizzes.map((quiz) => (
+                          {visibleSortedQuizzes.map((quiz) => (
                             <option key={quiz.id} value={quiz.id}>
                               {quiz.title} ({quiz.id}) {quiz.isArchived ? '[archived]' : ''}
                             </option>
                           ))}
                         </select>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Showing {visibleSortedQuizzes.length} of {sortedQuizzes.length} quizzes.
+                        </p>
+                        {hasMoreQuizzes ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => setVisibleQuizCount((previous) => previous + DASHBOARD_SELECT_PAGE_SIZE)}
+                          >
+                            Load more quizzes
+                          </Button>
+                        ) : null}
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                           For existing quizzes, keep uploaded question count equal to linked question count so edits can be mapped by order.
                         </p>

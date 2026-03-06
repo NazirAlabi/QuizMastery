@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 const ThemeContext = createContext();
 
@@ -26,16 +26,21 @@ export const ThemeProvider = ({ children }) => {
     localStorage.setItem('wallpaperSet', wallpaperSet);
   }, [theme, wallpaperSet]);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
-  };
+  }, []);
   
-  const toggleWallpaper = () => {
+  const toggleWallpaper = useCallback(() => {
     setWallpaperSet(prev => (prev === 'zigzag' ? 'prism' : 'zigzag'));
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ theme, toggleTheme, wallpaperSet, toggleWallpaper }),
+    [theme, toggleTheme, wallpaperSet, toggleWallpaper]
+  );
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, wallpaperSet, toggleWallpaper }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );

@@ -1,68 +1,61 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import ResultsDashboard from '@/components/results/ResultsDashboard.jsx';
 import ReviewPanel from '@/components/review/ReviewPanel.jsx';
-import DiscussionThread from '@/components/discussion/DiscussionThread.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { getResults } from '@/api/api.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
+import { useResults } from '@/hooks/useResults.js';
+
+const DiscussionThread = lazy(() => import('@/components/discussion/DiscussionThread.jsx'));
 
 const ResultsPage = () => {
   const { attemptId } = useParams();
-  const [results, setResults] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('results');
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
+  const [hasShownLoadError, setHasShownLoadError] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isDevFeaturesEnabled } = useAuth();
+  const { data: results, isLoading, isError } = useResults(attemptId);
 
   useEffect(() => {
-    loadResults();
-  }, [attemptId]);
+    if (!isError || hasShownLoadError) return;
 
-  const loadResults = async () => {
-    try {
-      const data = await getResults(attemptId);
-      setResults(data);
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to load results',
-        variant: 'destructive'
-      });
-      navigate('/quizzes');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setHasShownLoadError(true);
+    toast({
+      title: 'Error',
+      description: 'Failed to load results',
+      variant: 'destructive',
+    });
+    navigate('/quizzes');
+  }, [hasShownLoadError, isError, navigate, toast]);
 
-  const handleReviewAnswers = () => {
+  const handleReviewAnswers = useCallback(() => {
     setActiveTab('review');
     window.scrollTo(0, 0);
-  };
+  }, []);
 
-  const handleReturnToQuizzes = () => {
+  const handleReturnToQuizzes = useCallback(() => {
     navigate('/quizzes');
-  };
+  }, [navigate]);
 
-  const handleReturnToCourses = () => {
+  const handleReturnToCourses = useCallback(() => {
     navigate('/courses');
-  };
+  }, [navigate]);
 
-  const handleShowDiscussion = (questionId) => {
+  const handleShowDiscussion = useCallback((questionId) => {
     setSelectedQuestionId(questionId);
     setActiveTab('discussion');
     window.scrollTo(0, 0);
-  };
+  }, []);
 
-  if (isLoading) {
+  if (isLoading || !results) {
     return (
       <>
         <Helmet>
@@ -82,7 +75,7 @@ const ResultsPage = () => {
     );
   }
 
-  const answers = results.answers || [];
+  const answers = Array.isArray(results.answers) ? results.answers : [];
 
   return (
     <>
@@ -136,7 +129,15 @@ const ResultsPage = () => {
 
             <TabsContent value="discussion" className="mt-0">
               {selectedQuestionId ? (
-                <DiscussionThread questionId={selectedQuestionId} />
+                <Suspense
+                  fallback={(
+                    <div className="rounded-lg border border-slate-300 bg-slate-100 p-6 text-center dark:border-slate-800 dark:bg-slate-950">
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Loading discussion...</p>
+                    </div>
+                  )}
+                >
+                  <DiscussionThread questionId={selectedQuestionId} />
+                </Suspense>
               ) : (
                 <div className="text-center py-12 text-slate-500 bg-slate-100 rounded-lg border border-slate-300 p-6 dark:bg-slate-950 dark:border-slate-800 dark:text-slate-400">
                   <p className="text-base">Select a question from the review tab to view its discussion</p>

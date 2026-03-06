@@ -1,56 +1,59 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import QuizRunner from '@/components/quiz/QuizRunner.jsx';
-import { getAttemptQuizSession } from '@/api/api.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
+import { useAttemptQuizSession } from '@/hooks/useAttemptQuizSession.js';
 
 const QuizPage = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const attemptId = searchParams.get('attemptId');
-  const [quiz, setQuiz] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [hasShownLoadError, setHasShownLoadError] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { data: session, isLoading, isError } = useAttemptQuizSession(attemptId);
+  const quiz = useMemo(() => session?.quiz || null, [session]);
 
   useEffect(() => {
-    if (!attemptId) {
-      toast({
-        title: 'Error',
-        description: 'No attempt ID found',
-        variant: 'destructive'
-      });
-      navigate('/quizzes');
-      return;
-    }
+    if (attemptId) return;
 
-    loadQuiz();
-  }, [id, attemptId, navigate, toast]);
+    toast({
+      title: 'Error',
+      description: 'No attempt ID found',
+      variant: 'destructive',
+    });
+    navigate('/quizzes');
+  }, [attemptId, navigate, toast]);
 
-  const loadQuiz = async () => {
-    try {
-      const session = await getAttemptQuizSession(attemptId);
-      if (String(session?.quiz?.id || '') !== String(id || '')) {
-        throw new Error('Attempt does not match selected quiz');
-      }
-      setQuiz(session.quiz);
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error?.message || 'Failed to load quiz',
-        variant: 'destructive'
-      });
-      navigate('/quizzes');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (!session?.quiz?.id || !id) return;
+    if (String(session.quiz.id) === String(id)) return;
 
-  if (isLoading) {
+    toast({
+      title: 'Error',
+      description: 'Attempt does not match selected quiz',
+      variant: 'destructive',
+    });
+    navigate('/quizzes');
+  }, [id, navigate, session?.quiz?.id, toast]);
+
+  useEffect(() => {
+    if (!isError || hasShownLoadError) return;
+
+    setHasShownLoadError(true);
+    toast({
+      title: 'Error',
+      description: 'Failed to load quiz',
+      variant: 'destructive',
+    });
+    navigate('/quizzes');
+  }, [hasShownLoadError, isError, navigate, toast]);
+
+  if (isLoading || !attemptId) {
     return (
       <>
         <Helmet>
@@ -68,6 +71,10 @@ const QuizPage = () => {
         </div>
       </>
     );
+  }
+
+  if (!quiz || String(quiz.id || '') !== String(id || '')) {
+    return null;
   }
 
   return (

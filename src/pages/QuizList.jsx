@@ -1,26 +1,29 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
 import { Input } from '@/components/ui/input.jsx';
-import { getQuizzes, startAttempt } from '@/api/api.js';
 import { useAuth } from '@/hooks/useAuth.js';
-import { Clock, BookOpen, Play, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast.jsx';
+import QuizCard from '@/components/quiz/QuizCard.jsx';
+import { useQuizzes } from '@/hooks/useQuizzes.js';
+import { useStartAttempt } from '@/hooks/useStartAttempt.js';
 
 const QuizList = () => {
-  const [quizzes, setQuizzes] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [startingQuiz, setStartingQuiz] = useState(null);
+  const [startingQuizId, setStartingQuizId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hasShownLoadError, setHasShownLoadError] = useState(false);
   const { user, isDevFeaturesEnabled } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { data: quizzes = [], isLoading, isError } = useQuizzes();
+  const startAttemptMutation = useStartAttempt();
+
   const filteredQuizzes = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
     if (!normalizedSearch) return quizzes;
@@ -42,57 +45,49 @@ const QuizList = () => {
   }, [quizzes, searchQuery]);
 
   useEffect(() => {
-    loadQuizzes();
-  }, []);
+    if (!isError || hasShownLoadError) return;
 
-  const loadQuizzes = async () => {
-    try {
-      const data = await getQuizzes();
-      setQuizzes(data);
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to load quizzes',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setHasShownLoadError(true);
+    toast({
+      title: 'Error',
+      description: 'Failed to load quizzes',
+      variant: 'destructive',
+    });
+  }, [hasShownLoadError, isError, toast]);
 
-  const handleStartQuiz = async (quiz) => {
-    setStartingQuiz(quiz.id);
-    try {
-      const attempt = await startAttempt(quiz.id, user.id);
-      navigate(`/quiz/${quiz.id}/ready?attemptId=${attempt.id}`, {
-        state: {
-          quizTitle: quiz.title,
-          questionCount: quiz.questionCount,
-          estimatedTime: quiz.estimatedTime,
-        },
-      });
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to start quiz',
-        variant: 'destructive'
-      });
-      setStartingQuiz(null);
-    }
-  };
+  const handleStartQuiz = useCallback(
+    async (quiz) => {
+      if (!user?.id) return;
 
-  const getDifficultyVariant = (difficulty) => {
-    switch (difficulty) {
-      case 'beginner':
-        return 'success';
-      case 'intermediate':
-        return 'warning';
-      case 'advanced':
-        return 'destructive';
-      default:
-        return 'default';
-    }
-  };
+      setStartingQuizId(quiz.id);
+      try {
+        const attempt = await startAttemptMutation.mutateAsync({
+          quizId: quiz.id,
+          userId: user.id,
+        });
+        navigate(`/quiz/${quiz.id}/ready?attemptId=${attempt.id}`, {
+          state: {
+            quizTitle: quiz.title,
+            questionCount: quiz.questionCount,
+            estimatedTime: quiz.estimatedTime,
+          },
+        });
+      } catch {
+        toast({
+          title: 'Error',
+          description: 'Failed to start quiz',
+          variant: 'destructive',
+        });
+        setStartingQuizId(null);
+      }
+    },
+    [navigate, startAttemptMutation, toast, user?.id]
+  );
+
+  const startButtonLabel = useCallback(
+    (quiz) => (isDevFeaturesEnabled ? `Start Quiz (${quiz.id})` : 'Start Quiz'),
+    [isDevFeaturesEnabled]
+  );
 
   if (isLoading) {
     return (
@@ -172,55 +167,16 @@ const QuizList = () => {
 
           <div className="flex flex-wrap gap-4 md:gap-6">
             {filteredQuizzes.map((quiz) => (
-              <Card key={quiz.id} className="max-w-md hover:shadow-lg transition-shadow flex flex-col h-full dark:hover:shadow-slate-800/50">
-                <CardHeader className="pb-3 min-h-[128px]">
-                  <div className="flex items-start justify-between mb-2 gap-2">
-                    <CardTitle className="text-lg md:text-xl leading-tight">
-                      <Link to={`/quizzes/${quiz.id}`} className="hover:text-indigo-700 dark:hover:text-indigo-300">
-                        {quiz.title}
-                      </Link>
-                    </CardTitle>
-                    <Badge variant={getDifficultyVariant(quiz.difficulty)} className="shrink-0">
-                      {quiz.difficulty}
-                    </Badge>
-                  </div>
-                  <CardDescription className="text-sm md:text-base line-clamp-2">{quiz.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="mt-auto flex flex-col pt-0">
-                  <div className="space-y-3 mb-4">
-                    <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-                      <BookOpen className="h-4 w-4" />
-                      <span>{quiz.questionCount} questions</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-                      <Clock className="h-4 w-4" />
-                      <span>~{quiz.estimatedTime} minutes</span>
-                    </div>
-                    <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800">
-                      {quiz.topic}
-                    </Badge>
-                    {isDevFeaturesEnabled && (
-                      <div className="text-xs text-slate-500 font-mono dark:text-slate-400">
-                        quizId={quiz.id} | timing={quiz.timing?.enabled ? 'timed' : 'untimed'}
-                      </div>
-                    )}
-                  </div>
-
-                  <Button
-                    onClick={() => handleStartQuiz(quiz)}
-                    disabled={startingQuiz === quiz.id}
-                    className={`${isDevFeaturesEnabled ? 'w-full' : 'w-48 self-center'} min-h-[2.75rem] md:min-h-[2.5rem] bg-indigo-600 hover:bg-indigo-700 text-white text-base dark:bg-indigo-500 dark:hover:bg-indigo-600`}
-                  >
-                    <Play className="h-5 w-5 md:h-4 md:w-4 mr-2 hover:fill-white" />
-                    {startingQuiz === quiz.id
-                      ? 'Starting...'
-                      : isDevFeaturesEnabled
-                        ? `Start Quiz (${quiz.id})`
-                        : 'Start Quiz'
-                    }
-                  </Button>
-                </CardContent>
-              </Card>
+              <QuizCard
+                key={quiz.id}
+                quiz={quiz}
+                onStart={handleStartQuiz}
+                isStarting={startingQuizId === quiz.id}
+                isDevFeaturesEnabled={isDevFeaturesEnabled}
+                startLabel={startButtonLabel(quiz)}
+                fullWidthButton={isDevFeaturesEnabled}
+                className="max-w-md"
+              />
             ))}
           </div>
 

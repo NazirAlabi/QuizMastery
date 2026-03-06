@@ -1,10 +1,25 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { visualizer } from 'rollup-plugin-visualizer';
 
-export default defineConfig({
-  plugins: [react()],
+export default defineConfig(() => {
+  const shouldAnalyze = process.env.ANALYZE === 'true';
+
+  return {
+  plugins: [
+    react(),
+    shouldAnalyze
+      ? visualizer({
+          filename: 'dist/stats.html',
+          gzipSize: true,
+          brotliSize: true,
+          open: false,
+        })
+      : null,
+  ].filter(Boolean),
   build: {
+    sourcemap: shouldAnalyze,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -33,4 +48,5 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+};
 });

@@ -25,4 +25,4 @@ const WeaknessCard = ({ topic, accuracy }) => {
   );
 };
 
-export default WeaknessCard;
+export default React.memo(WeaknessCard);

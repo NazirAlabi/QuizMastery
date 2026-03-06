@@ -221,4 +221,4 @@ const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes, onRetur
   );
 };
 
-export default ResultsDashboard;
+export default React.memo(ResultsDashboard);

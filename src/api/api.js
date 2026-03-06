@@ -575,17 +575,42 @@ const mapDiscussionCommentsForUi = (discussion) => {
   });
 };
 
-export const getAdminContentSnapshot = async () => {
-  const [courses, quizzes, questions] = await Promise.all([
-    courseRepository.getCourses(),
-    quizRepository.getQuizzes(),
-    questionRepository.getQuestions(),
+export const getAdminContentSnapshot = async ({
+  coursesLimit = null,
+  coursesLastDoc = null,
+  quizzesLimit = null,
+  quizzesLastDoc = null,
+  questionsLimit = null,
+  questionsLastDoc = null,
+} = {}) => {
+  const [coursesResult, quizzesResult, questionsResult] = await Promise.all([
+    courseRepository.getCourses(coursesLimit, coursesLastDoc),
+    quizRepository.getQuizzes(quizzesLimit, quizzesLastDoc),
+    questionRepository.getQuestions(questionsLimit, questionsLastDoc),
   ]);
+
+  const courses = Array.isArray(coursesResult) ? coursesResult : coursesResult.items || [];
+  const quizzes = Array.isArray(quizzesResult) ? quizzesResult : quizzesResult.items || [];
+  const questions = Array.isArray(questionsResult) ? questionsResult : questionsResult.items || [];
 
   return {
     courses,
     quizzes,
     questions,
+    pagination: {
+      courses:
+        Array.isArray(coursesResult) || !coursesResult
+          ? null
+          : { lastDoc: coursesResult.lastDoc || null, hasMore: Boolean(coursesResult.hasMore) },
+      quizzes:
+        Array.isArray(quizzesResult) || !quizzesResult
+          ? null
+          : { lastDoc: quizzesResult.lastDoc || null, hasMore: Boolean(quizzesResult.hasMore) },
+      questions:
+        Array.isArray(questionsResult) || !questionsResult
+          ? null
+          : { lastDoc: questionsResult.lastDoc || null, hasMore: Boolean(questionsResult.hasMore) },
+    },
   };
 };
 
