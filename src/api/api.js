@@ -1,24 +1,49 @@
 import {
+  EmailAuthProvider,
   createUserWithEmailAndPassword,
+  linkWithCredential,
+  signInAnonymously,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
 } from 'firebase/auth';
-import { addDoc, collection, doc, getDoc, getDocs, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { auth, db } from '@/firebase/client.js';
 import { quizRepository } from '@/repositories/quizRepository.js';
 import { questionRepository } from '@/repositories/questionRepository.js';
 import { attemptRepository } from '@/repositories/attemptRepository.js';
 import { courseRepository } from '@/repositories/courseRepository.js';
 import { evaluateAnswer, isQuestionAutoGraded } from '@/utils/evaluateAnswer.js';
+const GUEST_ATTEMPT_LIMIT = 2;
 
 const discussionsCollection = collection(db, 'questionDiscussions');
+const usersCollection = collection(db, 'users');
+const attemptsCollection = collection(db, 'userAttempts');
 
 const SCORE_LEVELS = {
   EXCELLENT: 90,
   GREAT: 75,
   GOOD: 60,
 };
+const USER_TYPES = {
+  GUEST: 'guest',
+  REGISTERED: 'registered',
+};
+const GUEST_ATTEMPT_LIMIT_ERROR_CODE = 'guest-attempt-limit-reached';
+export const GUEST_ATTEMPT_LIMIT_REACHED_CODE = GUEST_ATTEMPT_LIMIT_ERROR_CODE;
 
 const DIFFICULTY_LABELS = {
   1: 'easy',
@@ -38,7 +63,7 @@ const SKILL_CATEGORY_LABELS = {
   3: 'application',
 };
 
-const QUIZ_SPEED_MULTIPLIERS = [0.5, 1, 1.5, 2];
+const QUIZ_SPEED_MULTIPLIERS = [0.25, 0.5, 1, 1.5, 2];
 
 const inferDifficulty = (tags = []) => {
   const lowered = tags.map((tag) => String(tag).toLowerCase());
@@ -65,6 +90,12 @@ const resolveEstimatedTime = (quiz, fallbackQuestions = 0) => {
   }
   return Math.max(1, Math.ceil(fallbackQuestions * 1.5));
 };
+
+const normalizeShortDescription = (record) =>
+  String(record?.shortDescription || record?.description || '').trim();
+
+const normalizeLongDescription = (record) =>
+  String(record?.longDescription || record?.description || record?.shortDescription || '').trim();
 
 const resolveIsTimePerQuestion = (quiz) => {
   if (typeof quiz?.isTimePerQuestion === 'boolean') return quiz.isTimePerQuestion;
@@ -120,12 +151,17 @@ const mapQuizForList = (quiz, courseByQuizId) => {
   const course = courseByQuizId.get(quiz.id) || null;
   const questionCount = resolveQuestionCount(quiz);
   const estimatedTime = resolveEstimatedTime(quiz, questionCount);
+  const shortDescription = normalizeShortDescription(quiz);
+  const longDescription = normalizeLongDescription(quiz) || shortDescription;
+  const description = shortDescription || longDescription || 'No description provided.';
 
   return {
     id: quiz.id,
     title: quiz.title || quiz.name,
     name: quiz.title || quiz.name,
-    description: quiz.description || 'No description provided.',
+    shortDescription,
+    longDescription,
+    description,
     topic:
       quiz.topic ||
       course?.topic ||
@@ -146,54 +182,159 @@ const mapQuizForList = (quiz, courseByQuizId) => {
   };
 };
 
-const ensureUserProfile = async (firebaseUser, preferredDisplayName = '') => {
-  const userRef = doc(db, 'users', firebaseUser.uid);
-  const existing = await getDoc(userRef);
-  const normalizedPreferredName = String(preferredDisplayName || '').trim();
-  const fallbackDisplayName =
-    normalizedPreferredName ||
-    firebaseUser.displayName ||
-    firebaseUser.email?.split('@')[0] ||
-    'Quiz User';
+const normalizeDisplayName = (value) => String(value || '').trim();
 
-  if (!existing.exists()) {
-    await setDoc(userRef, {
-      displayName: fallbackDisplayName,
-      email: firebaseUser.email || '',
-      createdAt: Timestamp.now(),
-      profilePhotoUrl: firebaseUser.photoURL || null,
-    });
+const normalizeEmailValue = (value) => {
+  if (value === null) return null;
+  const normalized = String(value || '').trim();
+  return normalized ? normalized : null;
+};
 
-    if (normalizedPreferredName && normalizedPreferredName !== firebaseUser.displayName) {
-      await updateProfile(firebaseUser, { displayName: normalizedPreferredName });
-    }
-  } else if (normalizedPreferredName) {
-    await updateDoc(userRef, { displayName: normalizedPreferredName });
-    if (normalizedPreferredName !== firebaseUser.displayName) {
-      await updateProfile(firebaseUser, { displayName: normalizedPreferredName });
-    }
+const resolveDisplayName = (preferredDisplayName, { existingDisplayName, firebaseUser, email }) => {
+  const preferred = normalizeDisplayName(preferredDisplayName);
+  if (preferred) return preferred;
+
+  const existing = normalizeDisplayName(existingDisplayName);
+  if (existing) return existing;
+
+  const authName = normalizeDisplayName(firebaseUser?.displayName);
+  if (authName) return authName;
+
+  const normalizedEmail = normalizeEmailValue(email);
+  if (normalizedEmail) {
+    return normalizedEmail.split('@')[0] || normalizedEmail;
   }
 
-  const profileSnapshot = await getDoc(userRef);
-  const profileData = profileSnapshot.exists() ? profileSnapshot.data() : {};
-  const resolvedDisplayName =
-    profileData.displayName ||
-    firebaseUser.displayName ||
-    firebaseUser.email?.split('@')[0] ||
-    'Quiz User';
+  return 'Guest';
+};
+
+const mapSessionUser = (firebaseUser, profileData = {}) => {
+  const resolvedEmail = normalizeEmailValue(
+    Object.prototype.hasOwnProperty.call(profileData, 'email')
+      ? profileData.email
+      : firebaseUser?.email ?? null
+  );
+  const displayName = resolveDisplayName(profileData.displayName, {
+    existingDisplayName: profileData.displayName,
+    firebaseUser,
+    email: resolvedEmail,
+  });
+  const isGuest = resolvedEmail === null;
 
   return {
     id: firebaseUser.uid,
     uid: firebaseUser.uid,
-    email: firebaseUser.email || '',
-    displayName: resolvedDisplayName,
-    profilePhotoUrl: firebaseUser.photoURL || null,
+    email: resolvedEmail,
+    displayName,
+    isGuest,
   };
+};
+
+const ensureUserProfile = async (
+  firebaseUser,
+  preferredDisplayName = '',
+  { email: requestedEmail } = {}
+) => {
+  const userRef = doc(db, 'users', firebaseUser.uid);
+  const existing = await getDoc(userRef);
+  const existingData = existing.exists() ? existing.data() : {};
+  const normalizedPreferredName = normalizeDisplayName(preferredDisplayName);
+  const normalizedRequestedEmail =
+    requestedEmail === undefined ? undefined : normalizeEmailValue(requestedEmail);
+
+  const resolvedEmail = (() => {
+    if (requestedEmail !== undefined) return normalizedRequestedEmail;
+    if (firebaseUser?.isAnonymous) return null;
+    const authEmail = normalizeEmailValue(firebaseUser?.email);
+    if (authEmail) return authEmail;
+    return normalizeEmailValue(existingData.email);
+  })();
+
+  const resolvedDisplayName = resolveDisplayName(normalizedPreferredName, {
+    existingDisplayName: existingData.displayName,
+    firebaseUser,
+    email: resolvedEmail,
+  });
+
+  if (!existing.exists()) {
+    await setDoc(userRef, {
+      displayName: resolvedDisplayName,
+      email: resolvedEmail,
+      createdAt: serverTimestamp(),
+    });
+  } else {
+    const updates = {};
+    if (resolvedDisplayName && resolvedDisplayName !== normalizeDisplayName(existingData.displayName)) {
+      updates.displayName = resolvedDisplayName;
+    }
+
+    const hasEmailField = Object.prototype.hasOwnProperty.call(existingData, 'email');
+    const normalizedExistingEmail = normalizeEmailValue(existingData.email);
+    const hasEmptyStringEmail =
+      typeof existingData.email === 'string' && existingData.email.trim() === '';
+    if (
+      resolvedEmail !== normalizedExistingEmail ||
+      (hasEmptyStringEmail && resolvedEmail === null) ||
+      (!hasEmailField && resolvedEmail === null)
+    ) {
+      updates.email = resolvedEmail;
+    }
+
+    if (!existingData.createdAt) {
+      updates.createdAt = serverTimestamp();
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await updateDoc(userRef, updates);
+    }
+  }
+
+  if (normalizedPreferredName && normalizedPreferredName !== normalizeDisplayName(firebaseUser.displayName)) {
+    await updateProfile(firebaseUser, { displayName: normalizedPreferredName });
+  }
+
+  const profileSnapshot = await getDoc(userRef);
+  const profileData = profileSnapshot.exists() ? profileSnapshot.data() : {};
+  return mapSessionUser(firebaseUser, profileData);
+};
+
+const getCurrentSessionIdentity = () => {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error('Not authenticated');
+  }
+
+  return {
+    currentUser,
+    userId: currentUser.uid,
+  };
+};
+
+const createGuestAttemptLimitError = () => {
+  const error = new Error('Guest quiz limit reached. Create an account to unlock unlimited attempts.');
+  error.code = GUEST_ATTEMPT_LIMIT_ERROR_CODE;
+  return error;
+};
+
+const countAttemptsByUserId = async (userId) => {
+  const snapshot = await getDocs(query(attemptsCollection, where('userId', '==', userId)));
+  return snapshot.size;
+};
+
+export const resolveSessionUser = async (
+  firebaseUser = auth.currentUser,
+  { email } = {}
+) => {
+  if (!firebaseUser) {
+    throw new Error('Not authenticated');
+  }
+
+  return ensureUserProfile(firebaseUser, '', { email });
 };
 
 export const login = async (email, password) => {
   const credential = await signInWithEmailAndPassword(auth, email, password);
-  const user = await ensureUserProfile(credential.user);
+  const user = await ensureUserProfile(credential.user, '', { email });
   const token = await credential.user.getIdToken();
 
   return {
@@ -203,8 +344,40 @@ export const login = async (email, password) => {
 };
 
 export const register = async (email, password, displayName = '') => {
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
-  const user = await ensureUserProfile(credential.user, displayName);
+  const normalizedName = normalizeDisplayName(displayName);
+  if (!normalizedName) {
+    throw new Error('Display name is required');
+  }
+
+  let credential;
+  const currentUser = auth.currentUser;
+  if (currentUser?.isAnonymous) {
+    credential = await linkWithCredential(currentUser, EmailAuthProvider.credential(email, password));
+  } else {
+    credential = await createUserWithEmailAndPassword(auth, email, password);
+  }
+
+  const user = await ensureUserProfile(credential.user, normalizedName, { email });
+  const token = await credential.user.getIdToken();
+
+  return {
+    user,
+    token,
+  };
+};
+
+export const createGuest = async (displayName = '') => {
+  const normalizedName = normalizeDisplayName(displayName);
+  if (!normalizedName) {
+    throw new Error('Display name is required');
+  }
+
+  if (auth.currentUser) {
+    throw new Error('You are already signed in');
+  }
+
+  const credential = await signInAnonymously(auth);
+  const user = await ensureUserProfile(credential.user, normalizedName, { email: null });
   const token = await credential.user.getIdToken();
 
   return {
@@ -218,26 +391,17 @@ export const logout = async () => {
 };
 
 export const updateUserDisplayName = async (displayName) => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Not authenticated');
-  }
+  const { currentUser, userId } = getCurrentSessionIdentity();
 
   const normalizedName = String(displayName || '').trim();
   if (!normalizedName) {
     throw new Error('Name cannot be empty');
   }
 
-  await updateDoc(doc(db, 'users', currentUser.uid), { displayName: normalizedName });
+  await updateDoc(doc(db, 'users', userId), { displayName: normalizedName });
   await updateProfile(currentUser, { displayName: normalizedName });
 
-  return {
-    id: currentUser.uid,
-    uid: currentUser.uid,
-    email: currentUser.email || '',
-    displayName: normalizedName,
-    profilePhotoUrl: currentUser.photoURL || null,
-  };
+  return resolveSessionUser(currentUser);
 };
 
 export const getQuizzes = async () => {
@@ -276,7 +440,13 @@ export const getCoursesWithQuizzes = async () => {
     result.push({
       id: course.id,
       title: course.title || course.name || course.topic || 'Untitled Course',
-      description: course.description || 'No course description provided.',
+      shortDescription: normalizeShortDescription(course),
+      longDescription:
+        normalizeLongDescription(course) || normalizeShortDescription(course),
+      description:
+        normalizeShortDescription(course) ||
+        normalizeLongDescription(course) ||
+        'No course description provided.',
       topic: course.topic || 'General',
       courseCode: course.courseCode || null,
       quizCount: quizzesForCourse.length,
@@ -309,7 +479,13 @@ export const getCoursePageById = async (courseId) => {
   return {
     id: course.id,
     title: course.title || course.name || course.topic || 'Untitled Course',
-    description: course.description || 'No course description provided.',
+    shortDescription: normalizeShortDescription(course),
+    longDescription:
+      normalizeLongDescription(course) || normalizeShortDescription(course),
+    description:
+      normalizeShortDescription(course) ||
+      normalizeLongDescription(course) ||
+      'No course description provided.',
     topic: course.topic || 'General',
     courseCode: course.courseCode || null,
     quizCount: quizzes.length,
@@ -434,7 +610,8 @@ const buildQuestionSemanticKey = (question) =>
 const buildQuizSemanticKey = (quiz) =>
   toStableString({
     title: quiz?.title || '',
-    description: quiz?.description || '',
+    shortDescription: normalizeShortDescription(quiz),
+    longDescription: normalizeLongDescription(quiz),
     topic: quiz?.topic || '',
     difficulty: Number(quiz?.difficulty) || 0,
     estimatedTime: Number(quiz?.estimatedTime) || 0,
@@ -446,7 +623,8 @@ const buildQuizSemanticKey = (quiz) =>
 const buildCourseSemanticKey = (course) =>
   toStableString({
     title: course?.title || '',
-    description: course?.description || '',
+    shortDescription: normalizeShortDescription(course),
+    longDescription: normalizeLongDescription(course),
     courseCode: course?.courseCode || '',
     topic: course?.topic || '',
     quizIds: Array.isArray(course?.quizIds) ? course.quizIds : [],
@@ -900,6 +1078,156 @@ export const removeDuplicateAdminContent = async ({ onProgress } = {}) => {
   return summary;
 };
 
+const resolveUserTypeFromRecord = (userRecord = {}) => {
+  const emailValue = userRecord?.email;
+  if (emailValue === null || typeof emailValue === 'undefined') {
+    return USER_TYPES.GUEST;
+  }
+  if (typeof emailValue === 'string' && emailValue.trim() === '') {
+    return USER_TYPES.GUEST;
+  }
+  return USER_TYPES.REGISTERED;
+};
+
+const toIsoOrNull = (value) => {
+  const parsed = toDate(value);
+  return parsed ? parsed.toISOString() : null;
+};
+
+export const getAdminUsersSnapshot = async () => {
+  const [usersSnapshot, attemptsSnapshot] = await Promise.all([
+    getDocs(usersCollection),
+    getDocs(attemptsCollection),
+  ]);
+
+  const attemptsByUserId = new Map();
+  attemptsSnapshot.docs.forEach((attemptDoc) => {
+    const data = attemptDoc.data() || {};
+    const ownerUserId = String(data.userId || '').trim();
+    if (!ownerUserId) return;
+
+    if (!attemptsByUserId.has(ownerUserId)) {
+      attemptsByUserId.set(ownerUserId, {
+        total: 0,
+        submitted: 0,
+        inProgress: 0,
+      });
+    }
+
+    const stats = attemptsByUserId.get(ownerUserId);
+    stats.total += 1;
+    if (data.status === 'submitted') stats.submitted += 1;
+    if (data.status === 'in_progress') stats.inProgress += 1;
+  });
+
+  const users = usersSnapshot.docs.map((userDoc) => {
+    const userData = userDoc.data() || {};
+    const userType = resolveUserTypeFromRecord(userData);
+    const stats = attemptsByUserId.get(userDoc.id) || {
+      total: 0,
+      submitted: 0,
+      inProgress: 0,
+    };
+
+    return {
+      id: userDoc.id,
+      displayName: String(userData.displayName || '').trim() || 'Unnamed user',
+      email: normalizeEmailValue(userData.email),
+      userType,
+      isGuest: userType === USER_TYPES.GUEST,
+      createdAt: toIsoOrNull(userData.createdAt),
+      lastActiveAt: toIsoOrNull(userData.lastActiveAt),
+      attemptCount: stats.total,
+      submittedAttemptCount: stats.submitted,
+      inProgressAttemptCount: stats.inProgress,
+    };
+  });
+
+  return users.sort((a, b) => {
+    const aTime = new Date(a.lastActiveAt || a.createdAt || 0).getTime();
+    const bTime = new Date(b.lastActiveAt || b.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+};
+
+const deleteAttemptWithAnswers = async (attemptId) => {
+  const answersSnapshot = await getDocs(collection(db, 'userAttempts', attemptId, 'answers'));
+  for (const answerDoc of answersSnapshot.docs) {
+    await deleteDoc(answerDoc.ref);
+  }
+
+  await deleteDoc(doc(db, 'userAttempts', attemptId));
+  return {
+    answersDeleted: answersSnapshot.size,
+  };
+};
+
+export const clearUserData = async () => {
+  const { userId } = getCurrentSessionIdentity();
+  const attemptsSnapshot = await getDocs(query(attemptsCollection, where('userId', '==', userId)));
+
+  let deletedAttempts = 0;
+  let deletedAnswers = 0;
+
+  for (const attemptDoc of attemptsSnapshot.docs) {
+    const result = await deleteAttemptWithAnswers(attemptDoc.id);
+    deletedAttempts += 1;
+    deletedAnswers += result.answersDeleted;
+  }
+
+  return { deletedAttempts, deletedAnswers };
+};
+
+export const deleteAdminGuestUsers = async (userIds = []) => {
+  const normalizedIds = uniqueStringIds(userIds);
+  if (normalizedIds.length === 0) {
+    return {
+      deletedUsers: 0,
+      deletedAttempts: 0,
+      deletedAnswers: 0,
+      skippedUsers: 0,
+    };
+  }
+
+  let deletedUsers = 0;
+  let deletedAttempts = 0;
+  let deletedAnswers = 0;
+  let skippedUsers = 0;
+
+  for (const userId of normalizedIds) {
+    const userRef = doc(db, 'users', userId);
+    const userSnapshot = await getDoc(userRef);
+    if (!userSnapshot.exists()) {
+      skippedUsers += 1;
+      continue;
+    }
+
+    const userData = userSnapshot.data() || {};
+    const userType = resolveUserTypeFromRecord(userData);
+    if (userType !== USER_TYPES.GUEST) {
+      skippedUsers += 1;
+      continue;
+    }
+
+    const attemptsSnapshot = await getDocs(query(attemptsCollection, where('userId', '==', userId)));
+    for (const attemptDoc of attemptsSnapshot.docs) {
+      const result = await deleteAttemptWithAnswers(attemptDoc.id);
+      deletedAttempts += 1;
+      deletedAnswers += result.answersDeleted;
+    }
+
+    await deleteDoc(userRef);
+    deletedUsers += 1;
+  }
+
+  return {
+    deletedUsers,
+    deletedAttempts,
+    deletedAnswers,
+    skippedUsers,
+  };
+};
+
 export const getQuizById = async (quizId) => {
   const quiz = await quizRepository.getQuizById(quizId);
   if (!quiz || quiz.isArchived === true) {
@@ -910,12 +1238,17 @@ export const getQuizById = async (quizId) => {
   const mappedQuestions = questions.map(mapQuestionForUi);
   const estimatedTime = resolveEstimatedTime(quiz, mappedQuestions.length);
   const timing = mapQuizTimingForUi(quiz, mappedQuestions.length);
+  const shortDescription = normalizeShortDescription(quiz);
+  const longDescription = normalizeLongDescription(quiz) || shortDescription;
+  const description = shortDescription || longDescription || '';
 
   return {
     id: quiz.id,
     title: quiz.title || quiz.name,
     name: quiz.title || quiz.name,
-    description: quiz.description || '',
+    shortDescription,
+    longDescription,
+    description,
     topic:
       quiz.topic ||
       quiz.courseCode ||
@@ -940,7 +1273,13 @@ export const getQuizPageById = async (quizId) => {
     associatedCourses: associatedCourses.map((course) => ({
       id: course.id,
       title: course.title || course.name || course.topic || 'Untitled Course',
-      description: course.description || 'No course description provided.',
+      shortDescription: normalizeShortDescription(course),
+      longDescription:
+        normalizeLongDescription(course) || normalizeShortDescription(course),
+      description:
+        normalizeShortDescription(course) ||
+        normalizeLongDescription(course) ||
+        'No course description provided.',
       topic: course.topic || 'General',
       courseCode: course.courseCode || null,
       quizCount: Number(course.quizCount || 0),
@@ -949,12 +1288,19 @@ export const getQuizPageById = async (quizId) => {
 };
 
 export const startAttempt = async (quizId, userId) => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Not authenticated');
-  }
-  if (currentUser.uid !== userId) {
+  const { currentUser, userId: resolvedUserId } = getCurrentSessionIdentity();
+  if (resolvedUserId !== userId) {
     throw new Error('You can only create attempts for the signed-in user');
+  }
+
+  const sessionUser = await resolveSessionUser(currentUser);
+  const isGuest = Boolean(sessionUser?.isGuest);
+
+  if (isGuest) {
+    const attemptCount = await countAttemptsByUserId(resolvedUserId);
+    if (attemptCount >= GUEST_ATTEMPT_LIMIT) {
+      throw createGuestAttemptLimitError();
+    }
   }
 
   const quiz = await quizRepository.getQuizById(quizId);
@@ -971,23 +1317,20 @@ export const startAttempt = async (quizId, userId) => {
   });
 
   return attemptRepository.createAttempt({
-    userId,
+    userId: resolvedUserId,
     quizId,
     timingSnapshot,
   });
 };
 
 export const getAttemptById = async (attemptId) => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Not authenticated');
-  }
+  const { userId } = getCurrentSessionIdentity();
 
   const attempt = await attemptRepository.getAttemptById(attemptId);
   if (!attempt) {
     throw new Error('Attempt not found');
   }
-  if (attempt.userId !== currentUser.uid) {
+  if (attempt.userId !== userId) {
     throw new Error('You can only access your own attempts');
   }
 
@@ -1092,30 +1435,24 @@ export const getAttemptQuizSession = async (attemptId) => {
 };
 
 export const submitAnswer = async (attemptId, questionId, selectedAnswer) => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Not authenticated');
-  }
+  const { userId } = getCurrentSessionIdentity();
 
   return attemptRepository.upsertAttemptAnswer({
     attemptId,
     questionId,
-    userId: currentUser.uid,
+    userId,
     answer: String(selectedAnswer ?? ''),
   });
 };
 
 export const terminateAttempt = async (attemptId) => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Not authenticated');
-  }
+  const { userId } = getCurrentSessionIdentity();
 
   const attempt = await attemptRepository.getAttemptById(attemptId);
   if (!attempt) {
     throw new Error('Attempt not found');
   }
-  if (attempt.userId !== currentUser.uid) {
+  if (attempt.userId !== userId) {
     throw new Error('You can only terminate your own attempts');
   }
   if (attempt.status !== 'in_progress') {
@@ -1127,38 +1464,35 @@ export const terminateAttempt = async (attemptId) => {
 };
 
 export const submitQuiz = async (attemptId) => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Not authenticated');
-  }
+  const { userId } = getCurrentSessionIdentity();
 
   const attempt = await attemptRepository.getAttemptById(attemptId);
   if (!attempt) {
     throw new Error('Attempt not found');
   }
-  if (attempt.userId !== currentUser.uid) {
+  if (attempt.userId !== userId) {
     throw new Error('You can only submit your own attempts');
   }
 
   const quiz = await getQuizById(attempt.quizId);
   const orderedQuestions = orderQuestionsForAttempt(quiz.questions, attempt);
-  const answerDocs = await attemptRepository.getAttemptAnswers(attemptId, currentUser.uid);
+  const answerDocs = await attemptRepository.getAttemptAnswers(attemptId, userId);
   const answerByQuestionId = new Map(
     answerDocs.map((answerDoc) => [answerDoc.questionId, String(answerDoc.answer ?? '')])
   );
 
-  const autoGradedQuestions = orderedQuestions.filter((question) => isQuestionAutoGraded(question));
-  const correctAnswers = autoGradedQuestions.reduce((total, question) => {
-    const userAnswer = answerByQuestionId.get(question.id) || '';
-    return total + (evaluateAnswer(question, userAnswer) ? 1 : 0);
-  }, 0);
+  const analysis = buildAttemptAnalysisFromQuestions({
+    orderedQuestions,
+    answerByQuestionId,
+    quizTopic: quiz.topic,
+  });
 
   const score =
-    autoGradedQuestions.length > 0
-      ? Math.round((correctAnswers / autoGradedQuestions.length) * 100)
+    analysis.gradedQuestionsCount > 0
+      ? Math.round((analysis.correctAnswers / analysis.gradedQuestionsCount) * 100)
       : 0;
 
-  await attemptRepository.submitAttempt({ attemptId, score });
+  await attemptRepository.submitAttempt({ attemptId, score, analysis });
 
   return { attemptId };
 };
@@ -1222,6 +1556,155 @@ const buildTopicBreakdown = (questions, answerByQuestionId) => {
   return { topicBreakdown, weaknesses };
 };
 
+const computeAccuracy = (correct, total) => (total > 0 ? Math.round((correct / total) * 100) : 0);
+
+const normalizeTopicBreakdown = (entries = []) =>
+  entries
+    .map((entry) => {
+      const total = Number(entry?.total ?? 0);
+      const correct = Number(entry?.correct ?? 0);
+      return {
+        topic: String(entry?.topic || '').trim(),
+        total: Number.isFinite(total) ? total : 0,
+        correct: Number.isFinite(correct) ? correct : 0,
+        accuracy: computeAccuracy(correct, total),
+      };
+    })
+    .filter((entry) => entry.topic);
+
+const buildAttemptAnalysisFromQuestions = ({ orderedQuestions, answerByQuestionId, quizTopic }) => {
+  const { topicBreakdown } = buildTopicBreakdown(orderedQuestions, answerByQuestionId);
+  const skillBreakdown = buildSkillBreakdown(orderedQuestions, answerByQuestionId);
+  const autoGradedQuestions = orderedQuestions.filter((question) => isQuestionAutoGraded(question));
+  const correctAnswers = autoGradedQuestions.reduce((total, question) => {
+    const userAnswer = answerByQuestionId.get(question.id) || '';
+    return total + (evaluateAnswer(question, userAnswer) ? 1 : 0);
+  }, 0);
+  const gradedQuestionsCount = autoGradedQuestions.length;
+  const totalQuestions = orderedQuestions.length;
+
+  return {
+    questionTopicBreakdown: normalizeTopicBreakdown(topicBreakdown),
+    correctAnswers,
+    gradedQuestionsCount,
+    totalQuestions,
+    quizTopic: String(quizTopic || '').trim() || 'General',
+    skillBreakdown,
+  };
+};
+
+const resolveQuizTopic = (quiz) =>
+  quiz?.topic || quiz?.courseCode || quiz?.tags?.[0] || 'General';
+
+const resolveAttemptAnalysis = async (attempt, userId) => {
+  const storedAnalysis = attempt?.analysis;
+  const hasStoredBreakdown = Array.isArray(storedAnalysis?.questionTopicBreakdown);
+  const hasStoredTotals =
+    Number.isFinite(Number(storedAnalysis?.correctAnswers)) &&
+    Number.isFinite(Number(storedAnalysis?.gradedQuestionsCount)) &&
+    Number.isFinite(Number(storedAnalysis?.totalQuestions));
+  const hasQuizTopic = typeof storedAnalysis?.quizTopic === 'string';
+
+  if (hasStoredBreakdown && hasStoredTotals && hasQuizTopic) {
+    return {
+      questionTopicBreakdown: normalizeTopicBreakdown(storedAnalysis.questionTopicBreakdown),
+      correctAnswers: Number(storedAnalysis.correctAnswers || 0),
+      gradedQuestionsCount: Number(storedAnalysis.gradedQuestionsCount || 0),
+      totalQuestions: Number(storedAnalysis.totalQuestions || 0),
+      quizTopic: String(storedAnalysis.quizTopic || '').trim() || 'General',
+      skillBreakdown:
+        storedAnalysis?.skillBreakdown && typeof storedAnalysis.skillBreakdown === 'object'
+          ? storedAnalysis.skillBreakdown
+          : null,
+    };
+  }
+
+  const quiz = await quizRepository.getQuizById(attempt.quizId);
+  if (!quiz) return null;
+  const questionIds = Array.isArray(quiz.questionIds) ? quiz.questionIds : [];
+  if (questionIds.length === 0) {
+    return {
+      questionTopicBreakdown: [],
+      correctAnswers: 0,
+      gradedQuestionsCount: 0,
+      totalQuestions: 0,
+      quizTopic: resolveQuizTopic(quiz),
+      skillBreakdown: {},
+    };
+  }
+
+  const questions = await questionRepository.getQuestionsByIds(questionIds);
+  const questionById = new Map(questions.map((question) => [question.id, question]));
+  const orderedQuestions = questionIds
+    .map((questionId, index) => {
+      const question = questionById.get(questionId);
+      if (!question) return null;
+      return mapQuestionForUi({ ...question, orderIndex: index });
+    })
+    .filter(Boolean);
+  const answerDocs = await attemptRepository.getAttemptAnswers(attempt.id, userId);
+  const answerByQuestionId = new Map(
+    answerDocs.map((answerDoc) => [answerDoc.questionId, String(answerDoc.answer ?? '')])
+  );
+
+  return buildAttemptAnalysisFromQuestions({
+    orderedQuestions,
+    answerByQuestionId,
+    quizTopic: resolveQuizTopic(quiz),
+  });
+};
+
+const buildProgressSummary = ({ entries, getTopicKey, getAccuracy, getCorrect, getTotal }) => {
+  const statsByTopic = new Map();
+
+  entries.forEach((entry) => {
+    const topic = getTopicKey(entry);
+    if (!topic) return;
+    if (!statsByTopic.has(topic)) {
+      statsByTopic.set(topic, {
+        topic,
+        totalCorrect: 0,
+        totalQuestions: 0,
+        attemptCount: 0,
+        history: [],
+      });
+    }
+    const stats = statsByTopic.get(topic);
+    const correct = Number(getCorrect(entry) || 0);
+    const total = Number(getTotal(entry) || 0);
+    const accuracy = Number(getAccuracy(entry) ?? computeAccuracy(correct, total));
+
+    stats.totalCorrect += Number.isFinite(correct) ? correct : 0;
+    stats.totalQuestions += Number.isFinite(total) ? total : 0;
+    stats.attemptCount += 1;
+    stats.history.push({
+      accuracy: Number.isFinite(accuracy) ? accuracy : 0,
+      submittedAt: entry.submittedAt ?? null,
+    });
+  });
+
+  return Array.from(statsByTopic.values()).map((stats) => {
+    const history = stats.history
+      .filter((item) => item.submittedAt instanceof Date)
+      .sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+    const last = history[0] || null;
+    const previous = history[1] || null;
+    const overallAccuracy = computeAccuracy(stats.totalCorrect, stats.totalQuestions);
+
+    return {
+      topic: stats.topic,
+      overallAccuracy,
+      totalCorrect: stats.totalCorrect,
+      totalQuestions: stats.totalQuestions,
+      attemptCount: stats.attemptCount,
+      lastAccuracy: last ? last.accuracy : null,
+      previousAccuracy: previous ? previous.accuracy : null,
+      delta: last && previous ? last.accuracy - previous.accuracy : null,
+      lastAttemptAt: last ? last.submittedAt.toISOString() : null,
+    };
+  });
+};
+
 const buildDiagnosis = (score) => {
   if (score >= SCORE_LEVELS.EXCELLENT) {
     return 'Excellent work. Keep increasing difficulty and practice mixed-question sets to maintain your edge.';
@@ -1236,22 +1719,19 @@ const buildDiagnosis = (score) => {
 };
 
 export const getResults = async (attemptId) => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) {
-    throw new Error('Not authenticated');
-  }
+  const { userId } = getCurrentSessionIdentity();
 
   const attempt = await attemptRepository.getAttemptById(attemptId);
   if (!attempt || attempt.status !== 'submitted') {
     throw new Error('Results are not available for this attempt yet');
   }
-  if (attempt.userId !== currentUser.uid) {
+  if (attempt.userId !== userId) {
     throw new Error('You can only view your own results');
   }
 
   const quiz = await getQuizById(attempt.quizId);
   const orderedQuestions = orderQuestionsForAttempt(quiz.questions, attempt);
-  const answerDocs = await attemptRepository.getAttemptAnswers(attemptId, currentUser.uid);
+  const answerDocs = await attemptRepository.getAttemptAnswers(attemptId, userId);
   const answerByQuestionId = new Map(
     answerDocs.map((answerDoc) => [answerDoc.questionId, String(answerDoc.answer ?? '')])
   );
@@ -1286,6 +1766,7 @@ export const getResults = async (attemptId) => {
   return {
     attemptId: attempt.id,
     quizId: attempt.quizId,
+    quizTopic: quiz.topic || 'General',
     score,
     totalQuestions,
     correctAnswers,
@@ -1311,6 +1792,90 @@ export const getResults = async (attemptId) => {
   };
 };
 
+export const getProgressInsights = async () => {
+  const { userId } = getCurrentSessionIdentity();
+
+  const attemptsSnapshot = await getDocs(query(attemptsCollection, where('userId', '==', userId)));
+  const attempts = attemptsSnapshot.docs.map((attemptDoc) => ({
+    id: attemptDoc.id,
+    ...attemptDoc.data(),
+  }));
+  const submittedAttempts = attempts.filter((attempt) => attempt.status === 'submitted');
+  const totalSubmittedAttempts = submittedAttempts.length;
+
+  if (submittedAttempts.length === 0) {
+    return {
+      questionTopicSummary: [],
+      quizTopicSummary: [],
+      totalSubmittedAttempts: 0,
+    };
+  }
+
+  const analysisEntries = [];
+  for (const attempt of submittedAttempts) {
+    try {
+      const analysis = await resolveAttemptAnalysis(attempt, userId);
+      if (!analysis) continue;
+      analysisEntries.push({
+        attemptId: attempt.id,
+        submittedAt: toDate(attempt.submittedAt),
+        ...analysis,
+      });
+    } catch (error) {
+      console.warn('Failed to build progress analysis for attempt:', attempt?.id, error);
+    }
+  }
+
+  const questionTopicEntries = [];
+  analysisEntries.forEach((entry) => {
+    (entry.questionTopicBreakdown || []).forEach((topicEntry) => {
+      questionTopicEntries.push({
+        topic: topicEntry.topic,
+        correct: topicEntry.correct,
+        total: topicEntry.total,
+        accuracy: topicEntry.accuracy,
+        submittedAt: entry.submittedAt,
+      });
+    });
+  });
+
+  const questionTopicSummary = buildProgressSummary({
+    entries: questionTopicEntries,
+    getTopicKey: (entry) => entry.topic,
+    getAccuracy: (entry) => entry.accuracy,
+    getCorrect: (entry) => entry.correct,
+    getTotal: (entry) => entry.total,
+  }).sort((a, b) => {
+    if (b.overallAccuracy !== a.overallAccuracy) return b.overallAccuracy - a.overallAccuracy;
+    return a.topic.localeCompare(b.topic);
+  });
+
+  const quizTopicEntries = analysisEntries.map((entry) => ({
+    topic: String(entry.quizTopic || '').trim() || 'General',
+    correct: entry.correctAnswers,
+    total: entry.gradedQuestionsCount,
+    accuracy: computeAccuracy(entry.correctAnswers, entry.gradedQuestionsCount),
+    submittedAt: entry.submittedAt,
+  }));
+
+  const quizTopicSummary = buildProgressSummary({
+    entries: quizTopicEntries,
+    getTopicKey: (entry) => entry.topic,
+    getAccuracy: (entry) => entry.accuracy,
+    getCorrect: (entry) => entry.correct,
+    getTotal: (entry) => entry.total,
+  }).sort((a, b) => {
+    if (b.overallAccuracy !== a.overallAccuracy) return b.overallAccuracy - a.overallAccuracy;
+    return a.topic.localeCompare(b.topic);
+  });
+
+  return {
+    questionTopicSummary,
+    quizTopicSummary,
+    totalSubmittedAttempts,
+  };
+};
+
 export const flagQuestion = async () => {
   return { success: true };
 };
@@ -1325,11 +1890,12 @@ export const postComment = async (questionId, text, author) => {
   if (!discussion?.id) {
     throw new Error('Discussion not found');
   }
+  const { userId } = getCurrentSessionIdentity();
 
   const rawComments = Array.isArray(discussion.comments) ? discussion.comments : [];
   const nextComment = {
     id: `${questionId}-${Date.now()}`,
-    userId: auth.currentUser?.uid || '',
+    userId,
     displayName: String(author || 'Anonymous').trim() || 'Anonymous',
     comment_text: String(text || '').trim(),
     upvotes: 0,

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -10,20 +10,14 @@ import { useAuth } from '@/hooks/useAuth.js';
 import QuizCard from '@/components/quiz/QuizCard.jsx';
 import { useCourse } from '@/hooks/useCourse.js';
 import { useStartAttempt } from '@/hooks/useStartAttempt.js';
+import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
+import { appendReturnUrl } from '@/utils/returnUrl.js';
 
-const buildCourseBaseDescription = (course) =>
-  String(course?.description || '').trim() || 'No course description provided.';
+const buildCourseDescription = (course) => {
+  const baseDescription =   String(course?.longDescription || course?.shortDescription || course?.description || '').trim() ||
+  'No course description provided.';
 
-const buildCourseDescriptionDetail = (course) => {
-  const baseDescription = buildCourseBaseDescription(course);
-  const quizCount = Array.isArray(course?.quizzes) ? course.quizzes.length : 0;
-  const parts = [
-    `Topic: ${course?.topic || 'General'}.`,
-    `Course code: ${course?.courseCode || 'Not specified'}.`,
-    `Linked quizzes: ${quizCount}.`,
-  ];
-
-  return `${baseDescription} ${parts.join(' ')}`.trim();
+  return `${baseDescription}`.trim();
 };
 
 const CourseDetailPage = () => {
@@ -36,6 +30,16 @@ const CourseDetailPage = () => {
   const [hasShownLoadError, setHasShownLoadError] = useState(false);
   const { data: course, isLoading, isError } = useCourse(id);
   const startAttemptMutation = useStartAttempt();
+  const location = useLocation();
+  const returnUrl = useMemo(
+    () => `${location.pathname}${location.search}${location.hash}`,
+    [location.hash, location.pathname, location.search]
+  );
+  const authPromptUrl = useMemo(() => appendReturnUrl('/auth-prompt', returnUrl), [returnUrl]);
+  const guestLimitUrl = useMemo(
+    () => appendReturnUrl('/register?reason=guest-attempt-limit', returnUrl),
+    [returnUrl]
+  );
 
   useEffect(() => {
     if (!isError || hasShownLoadError) return;
@@ -49,8 +53,7 @@ const CourseDetailPage = () => {
     navigate('/courses');
   }, [hasShownLoadError, isError, navigate, toast]);
 
-  const baseDescription = useMemo(() => buildCourseBaseDescription(course), [course]);
-  const descriptionDetail = useMemo(() => buildCourseDescriptionDetail(course), [course]);
+  const description = useMemo(() => buildCourseDescription(course), [course]);
   const linkedQuizCount = useMemo(
     () => (Array.isArray(course?.quizzes) ? course.quizzes.length : 0),
     [course]
@@ -58,7 +61,10 @@ const CourseDetailPage = () => {
 
   const handleStartQuiz = useCallback(
     async (quiz) => {
-      if (!user?.id) return;
+      if (!user?.id) {
+        navigate(authPromptUrl);
+        return;
+      }
 
       setStartingQuizId(quiz.id);
       try {
@@ -73,7 +79,17 @@ const CourseDetailPage = () => {
             estimatedTime: quiz.estimatedTime,
           },
         });
-      } catch {
+      } catch (error) {
+        if (error?.code === GUEST_ATTEMPT_LIMIT_REACHED_CODE) {
+          toast({
+            title: 'Free guest limit reached',
+            description: 'Create an account to continue taking quizzes.',
+          });
+          navigate(guestLimitUrl);
+          setStartingQuizId(null);
+          return;
+        }
+
         toast({
           title: 'Error',
           description: 'Failed to start quiz',
@@ -82,7 +98,7 @@ const CourseDetailPage = () => {
         setStartingQuizId(null);
       }
     },
-    [navigate, startAttemptMutation, toast, user?.id]
+    [authPromptUrl, guestLimitUrl, navigate, startAttemptMutation, toast, user?.id]
   );
 
   const getStartLabel = useCallback(
@@ -111,7 +127,7 @@ const CourseDetailPage = () => {
     <>
       <Helmet>
         <title>{`${course.title} - Course Page`}</title>
-        <meta name="description" content={descriptionDetail} />
+        <meta name="description" content={description} />
       </Helmet>
 
       <div className="min-h-screen">
@@ -127,7 +143,7 @@ const CourseDetailPage = () => {
               <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">{course.title}</h1>
               {course.courseCode ? <Badge variant="outline">{course.courseCode}</Badge> : null}
             </div>
-            <p className="text-slate-600 dark:text-slate-300">{baseDescription}</p>
+            <p className="text-slate-600 dark:text-slate-300">{description}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

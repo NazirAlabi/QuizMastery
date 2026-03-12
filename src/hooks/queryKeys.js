@@ -6,5 +6,6 @@ export const queryKeys = {
   quizPage: (quizId) => ['quiz-page', String(quizId || '')],
   attemptQuizSession: (attemptId) => ['attempt-quiz-session', String(attemptId || '')],
   results: (attemptId) => ['results', String(attemptId || '')],
+  progressInsights: ['progress-insights'],
   adminContentSnapshot: ['admin-content-snapshot'],
 };

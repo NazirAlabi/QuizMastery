@@ -1,6 +1,7 @@
 {
   "title": "Data Structures Fundamentals", // Quiz name displayed in list/detail views
-  "description": "Master the core concepts of arrays, linked lists, stacks, queues, and hash tables", // Summary of what this quiz covers
+  "shortDescription": "Master the core concepts of arrays, linked lists, stacks, queues, and hash tables", // Summary of what this quiz covers
+  "longDescription": "This quiz covers the core concepts of arrays, linked lists, stacks, queues, and hash tables. It is a great introduction to data structures and algorithms.", // Detailed quiz description
   "topic": "Data Structures", // Primary subject/category for the quiz
   "difficulty": 2, // 1=easy, 2=intermediate, 3=advanced
   "estimatedTime": 25, // Duration in minutes (total or per-question based on flag below)

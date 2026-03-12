@@ -79,13 +79,18 @@ class AttemptRepository {
       .filter((answerDoc) => answerDoc.userId === userId);
   }
 
-  async submitAttempt({ attemptId, score }) {
+  async submitAttempt({ attemptId, score, analysis }) {
     const attemptRef = doc(db, 'userAttempts', attemptId);
-    await updateDoc(attemptRef, {
+    const payload = {
       score,
       status: 'submitted',
       submittedAt: Timestamp.now(),
-    });
+    };
+    if (analysis && typeof analysis === 'object') {
+      payload.analysis = analysis;
+    }
+
+    await updateDoc(attemptRef, payload);
   }
 
   async abandonAttempt({ attemptId }) {

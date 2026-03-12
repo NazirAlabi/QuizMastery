@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
@@ -14,18 +14,33 @@ import { useCourses } from '@/hooks/useCourses.js';
 import { useStartAttempt } from '@/hooks/useStartAttempt.js';
 import QuizCard from '@/components/quiz/QuizCard.jsx';
 import { queryKeys } from '@/hooks/queryKeys.js';
+import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
+import { appendReturnUrl } from '@/utils/returnUrl.js';
+import { ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils.js';
 
 const CoursesPage = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [startingQuizId, setStartingQuizId] = useState(null);
   const [selectedCourseFilters, setSelectedCourseFilters] = useState([]);
   const [hasShownLoadError, setHasShownLoadError] = useState(false);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, isDevFeaturesEnabled } = useAuth();
   const queryClient = useQueryClient();
   const { data: courses = [], isLoading, isError } = useCourses();
   const startAttemptMutation = useStartAttempt();
+  const location = useLocation();
+  const returnUrl = useMemo(
+    () => `${location.pathname}${location.search}${location.hash}`,
+    [location.hash, location.pathname, location.search]
+  );
+  const authPromptUrl = useMemo(() => appendReturnUrl('/auth-prompt', returnUrl), [returnUrl]);
+  const guestLimitUrl = useMemo(
+    () => appendReturnUrl('/register?reason=guest-attempt-limit', returnUrl),
+    [returnUrl]
+  );
 
   useEffect(() => {
     if (!isError || hasShownLoadError) return;
@@ -40,7 +55,10 @@ const CoursesPage = () => {
 
   const handleStartQuiz = useCallback(
     async (quiz) => {
-      if (!user?.id) return;
+      if (!user?.id) {
+        navigate(authPromptUrl);
+        return;
+      }
 
       setStartingQuizId(quiz.id);
       try {
@@ -55,7 +73,17 @@ const CoursesPage = () => {
             estimatedTime: quiz.estimatedTime,
           },
         });
-      } catch {
+      } catch (error) {
+        if (error?.code === GUEST_ATTEMPT_LIMIT_REACHED_CODE) {
+          toast({
+            title: 'Guest limit reached',
+            description: 'Create an account to continue taking quizzes.',
+          });
+          navigate(guestLimitUrl);
+          setStartingQuizId(null);
+          return;
+        }
+
         toast({
           title: 'Error',
           description: 'Failed to start quiz',
@@ -64,7 +92,7 @@ const CoursesPage = () => {
         setStartingQuizId(null);
       }
     },
-    [navigate, startAttemptMutation, toast, user?.id]
+    [authPromptUrl, guestLimitUrl, navigate, startAttemptMutation, toast, user?.id]
   );
 
   const prefetchCourse = useCallback(
@@ -153,31 +181,53 @@ const CoursesPage = () => {
           {courses.length > 0 && (
             <Card className="mb-6">
               <CardContent className="py-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Filter courses:</span>
-                  {courses.map((course) => {
-                    const isSelected = selectedCourseFilters.includes(course.id);
-                    return (
-                      <Button
-                        key={course.id}
-                        size="sm"
-                        variant={isSelected ? 'default' : 'outline'}
-                        onClick={() => toggleCourseFilter(course.id)}
-                        className="h-8"
-                      >
-                        {course.title} ({course.quizzes.length})
-                      </Button>
-                    );
-                  })}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Filter courses
+                  </span>
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={clearFilters}
-                    disabled={selectedCourseFilters.length === 0}
-                    className="h-8"
+                    type="button"
+                    onClick={() => setIsMobileFiltersOpen((previous) => !previous)}
+                    className="md:hidden h-8"
+                    aria-expanded={isMobileFiltersOpen}
                   >
-                    Clear all filters
+                    {isMobileFiltersOpen ? 'Hide' : 'Show'}
+                    <ChevronDown
+                      className={cn(
+                        'ml-2 h-4 w-4 transition-transform',
+                        isMobileFiltersOpen && 'rotate-180'
+                      )}
+                    />
                   </Button>
+                </div>
+                <div className={cn('mt-3', isMobileFiltersOpen ? 'block' : 'hidden', 'md:block')}>
+                  <div className="flex flex-wrap items-center gap-2 md:flex-nowrap md:overflow-x-auto md:pb-1">
+                    {courses.map((course) => {
+                      const isSelected = selectedCourseFilters.includes(course.id);
+                      return (
+                        <Button
+                          key={course.id}
+                          size="sm"
+                          variant={isSelected ? 'default' : 'outline'}
+                          onClick={() => toggleCourseFilter(course.id)}
+                          className="h-8 md:flex-shrink-0"
+                        >
+                          {course.title} ({course.quizzes.length})
+                        </Button>
+                      );
+                    })}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={clearFilters}
+                      disabled={selectedCourseFilters.length === 0}
+                      className="h-8 md:flex-shrink-0"
+                    >
+                      Clear all filters
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -200,7 +250,9 @@ const CoursesPage = () => {
                     </h2>
                     {course.courseCode ? <Badge variant="outline">{course.courseCode}</Badge> : null}
                   </div>
-                  <p className="text-slate-600 dark:text-slate-400">{course.description}</p>
+                  <p className="text-slate-600 dark:text-slate-400 w-1/2">
+                    {course.shortDescription || course.description || ''}
+                  </p>
                 </div>
 
                 {course.quizzes.length === 0 ? (

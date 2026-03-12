@@ -4,8 +4,16 @@ import { Button } from '@/components/ui/button.jsx';
 import WeaknessCard from '@/components/results/WeaknessCard.jsx';
 import { CheckCircle, XCircle, TrendingUp, Brain, Target, Lightbulb, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
+import ProgressInsightsCard from '@/components/results/ProgressInsightsCard.jsx';
 
-const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes, onReturnToCourses }) => {
+const ResultsDashboard = ({
+  results,
+  progressInsights,
+  progressInsightsLoading,
+  onReviewAnswers,
+  onReturnToQuizzes,
+  onReturnToCourses,
+}) => {
   const [openSections, setOpenSections] = useState({
     weaknesses: false,
     topic: false,
@@ -38,6 +46,7 @@ const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes, onRetur
       [sectionKey]: !previous[sectionKey],
     }));
   };
+
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -103,6 +112,13 @@ const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes, onRetur
           )}
         </Card>
       )}
+
+      <ProgressInsightsCard
+        progressInsights={progressInsights}
+        loading={progressInsightsLoading}
+        currentAttemptTopics={topicBreakdown}
+        currentQuizTopic={results.quizTopic || null}
+      />
 
       <Card>
         <CardHeader className="pb-4">
@@ -207,14 +223,14 @@ const ResultsDashboard = ({ results, onReviewAnswers, onReturnToQuizzes, onRetur
           variant="outline"
           className="w-full sm:w-auto min-h-[3rem] md:min-h-[2.5rem] text-slate-700 text-base dark:text-slate-300"
         >
-          Back to Courses
+          Browse Courses
         </Button>
         <Button
           onClick={onReturnToQuizzes}
-          variant="outline"
+          variant="secondary"
           className="w-full sm:w-auto min-h-[3rem] md:min-h-[2.5rem] text-slate-700 text-base dark:text-slate-300"
         >
-          Back to Quizzes
+          Take a Quiz
         </Button>
       </div>
     </div>

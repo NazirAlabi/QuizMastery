@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
 import { useResults } from '@/hooks/useResults.js';
+import { useProgressInsights } from '@/hooks/useProgressInsights.js';
 
 const DiscussionThread = lazy(() => import('@/components/discussion/DiscussionThread.jsx'));
 
@@ -23,6 +24,7 @@ const ResultsPage = () => {
   const { toast } = useToast();
   const { isDevFeaturesEnabled } = useAuth();
   const { data: results, isLoading, isError } = useResults(attemptId);
+  const { data: progressInsights, isLoading: isProgressInsightsLoading } = useProgressInsights();
 
   useEffect(() => {
     if (!isError || hasShownLoadError) return;
@@ -113,6 +115,8 @@ const ResultsPage = () => {
             <TabsContent value="results" className="mt-0">
               <ResultsDashboard
                 results={results}
+                progressInsights={progressInsights}
+                progressInsightsLoading={isProgressInsightsLoading}
                 onReviewAnswers={handleReviewAnswers}
                 onReturnToQuizzes={handleReturnToQuizzes}
                 onReturnToCourses={handleReturnToCourses}

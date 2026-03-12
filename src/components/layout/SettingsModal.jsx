@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
+import { clearUserData } from '@/api/api.js';
 import { X } from 'lucide-react';
 
 const SETTINGS_SECTIONS = [
@@ -11,6 +12,11 @@ const SETTINGS_SECTIONS = [
     id: 'profile',
     title: 'Profile',
     description: 'Update your personal information.',
+  },
+  {
+    id: 'data',
+    title: 'Data',
+    description: 'Clear your quiz activity.',
   },
 ];
 
@@ -20,6 +26,7 @@ const SettingsModal = ({ open, onClose }) => {
   const [activeSection, setActiveSection] = useState(SETTINGS_SECTIONS[0].id);
   const [nameDraft, setNameDraft] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -75,6 +82,33 @@ const SettingsModal = ({ open, onClose }) => {
       });
     }
     setIsSaving(false);
+  };
+
+  const handleClearData = async () => {
+    if (!user?.uid) return;
+
+    const confirmed = window.confirm(
+      'This will permanently delete all of your quiz attempts and related answers. This action cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    setIsClearing(true);
+    try {
+      const result = await clearUserData();
+      toast({
+        title: 'Data cleared',
+        description: `Deleted ${result.deletedAttempts} attempts and ${result.deletedAnswers} answers.`,
+      });
+      onClose();
+    } catch (error) {
+      toast({
+        title: 'Unable to clear data',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsClearing(false);
+    }
   };
 
   return (
@@ -145,6 +179,29 @@ const SettingsModal = ({ open, onClose }) => {
                   </Button>
                 </div>
               </form>
+            )}
+            {activeSection === 'data' && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Clear Data</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Remove all quiz attempts and related activity from your account.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-100">
+                  This action permanently deletes your quiz attempts and answers. Your account stays active.
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={handleClearData}
+                    disabled={isClearing || !user?.uid}
+                  >
+                    {isClearing ? 'Clearing...' : 'Clear All Data'}
+                  </Button>
+                </div>
+              </div>
             )}
           </section>
         </div>

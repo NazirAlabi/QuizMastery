@@ -26,7 +26,10 @@ const normalizeCoursePayload = (payload) => {
 
   const normalized = {
     title: String(payload?.title || '').trim(),
-    description: String(payload?.description || '').trim(),
+    shortDescription: String(payload?.shortDescription || payload?.description || '').trim(),
+    longDescription: String(
+      payload?.longDescription || payload?.description || payload?.shortDescription || ''
+    ).trim(),
     topic: String(payload?.topic || '').trim(),
     quizIds,
     isArchived: Boolean(payload?.isArchived),
@@ -43,8 +46,11 @@ const validateCoursePayload = (course) => {
   if (!isNonEmptyString(course.title)) {
     throw new Error('title is required');
   }
-  if (!isNonEmptyString(course.description)) {
-    throw new Error('description is required');
+  if (!isNonEmptyString(course.shortDescription)) {
+    throw new Error('shortDescription is required');
+  }
+  if (!isNonEmptyString(course.longDescription)) {
+    throw new Error('longDescription is required');
   }
   if (!isNonEmptyString(course.topic)) {
     throw new Error('topic is required');

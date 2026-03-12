@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
@@ -12,6 +12,8 @@ import { useToast } from '@/components/ui/use-toast.jsx';
 import QuizCard from '@/components/quiz/QuizCard.jsx';
 import { useQuizzes } from '@/hooks/useQuizzes.js';
 import { useStartAttempt } from '@/hooks/useStartAttempt.js';
+import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
+import { appendReturnUrl } from '@/utils/returnUrl.js';
 
 const QuizList = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -23,6 +25,16 @@ const QuizList = () => {
   const { toast } = useToast();
   const { data: quizzes = [], isLoading, isError } = useQuizzes();
   const startAttemptMutation = useStartAttempt();
+  const location = useLocation();
+  const returnUrl = useMemo(
+    () => `${location.pathname}${location.search}${location.hash}`,
+    [location.hash, location.pathname, location.search]
+  );
+  const authPromptUrl = useMemo(() => appendReturnUrl('/auth-prompt', returnUrl), [returnUrl]);
+  const guestLimitUrl = useMemo(
+    () => appendReturnUrl('/register?reason=guest-attempt-limit', returnUrl),
+    [returnUrl]
+  );
 
   const filteredQuizzes = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -31,6 +43,8 @@ const QuizList = () => {
     return quizzes.filter((quiz) => {
       const haystack = [
         quiz.title,
+        quiz.shortDescription,
+        quiz.longDescription,
         quiz.description,
         quiz.topic,
         quiz.difficulty,
@@ -57,7 +71,10 @@ const QuizList = () => {
 
   const handleStartQuiz = useCallback(
     async (quiz) => {
-      if (!user?.id) return;
+      if (!user?.id) {
+        navigate(authPromptUrl);
+        return;
+      }
 
       setStartingQuizId(quiz.id);
       try {
@@ -72,7 +89,17 @@ const QuizList = () => {
             estimatedTime: quiz.estimatedTime,
           },
         });
-      } catch {
+      } catch (error) {
+        if (error?.code === GUEST_ATTEMPT_LIMIT_REACHED_CODE) {
+          toast({
+            title: 'Free guest limit reached',
+            description: 'Create an account to continue taking quizzes.',
+          });
+          navigate(guestLimitUrl);
+          setStartingQuizId(null);
+          return;
+        }
+
         toast({
           title: 'Error',
           description: 'Failed to start quiz',
@@ -81,7 +108,7 @@ const QuizList = () => {
         setStartingQuizId(null);
       }
     },
-    [navigate, startAttemptMutation, toast, user?.id]
+    [authPromptUrl, guestLimitUrl, navigate, startAttemptMutation, toast, user?.id]
   );
 
   const startButtonLabel = useCallback(
@@ -135,7 +162,7 @@ const QuizList = () => {
               <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search quizzes by title, topic, description, or ID"
+                placeholder="Search quizzes..."
                 className="pl-9 pr-10"
               />
               {searchQuery ? (

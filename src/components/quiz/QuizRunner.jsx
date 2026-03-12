@@ -336,7 +336,7 @@ const QuizRunner = ({ quiz, attemptId }) => {
             variant="outline"
             onClick={() => setIsOnBreak((previous) => !previous)}
             disabled={isSubmitting || isQuitting}
-            className="py-1 px-2 bg-black/20 dark:bg-white/20 md:bg-none md:p-0 md:min-h-[2.5rem]"
+            className="py-1 px-2 bg-black/20 dark:bg-white/20 md:bg-none md:min-h-[2.5rem]"
           >
             {isOnBreak ? (
               <>
@@ -364,7 +364,7 @@ const QuizRunner = ({ quiz, attemptId }) => {
           variant="destructive"
           onClick={handleQuitQuiz}
           disabled={isInteractionLocked}
-          className="min-h-[2.5rem] text-white dark:text-slate-100 hidden md:block"
+          className="min-h-[2.5rem] text-white dark:text-slate-100 hidden md:flex"
         >
           <XCircle className="h-4 w-4 mr-2" />
           {isQuitting ? 'Quitting...' : 'Quit Quiz'}

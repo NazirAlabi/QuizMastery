@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useState, useEffect, createElement, useMemo } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
 import { auth } from '@/firebase/client.js';
-import { db } from '@/firebase/client.js';
 import {
+  createGuest as apiCreateGuest,
   login as apiLogin,
   logout as apiLogout,
   register as apiRegister,
+  resolveSessionUser,
   updateUserDisplayName as apiUpdateUserDisplayName,
 } from '@/api/api.js';
 import {
@@ -19,7 +19,36 @@ import {
   writeDevAccessSession,
 } from '@/config/devFeatures.js';
 
-const AuthContext = createContext(null);
+const AUTH_CONTEXT_KEY = '__UQM_AUTH_CONTEXT__';
+
+const AuthContext = (() => {
+  if (typeof globalThis !== 'undefined') {
+    if (!globalThis[AUTH_CONTEXT_KEY]) {
+      globalThis[AUTH_CONTEXT_KEY] = createContext(null);
+    }
+    return globalThis[AUTH_CONTEXT_KEY];
+  }
+  return createContext(null);
+})();
+
+const LEGACY_GUEST_ID_COOKIE = 'qm_guest_id';
+const LEGACY_GUEST_AUTH_KEY = 'qm_guest_auth_v1';
+
+const clearLegacyGuestArtifacts = () => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  try {
+    window.localStorage.removeItem(LEGACY_GUEST_AUTH_KEY);
+  } catch {
+    // no-op
+  }
+
+  try {
+    document.cookie = `${encodeURIComponent(LEGACY_GUEST_ID_COOKIE)}=; Path=/; Max-Age=0; SameSite=Lax`;
+  } catch {
+    // no-op
+  }
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -30,7 +59,10 @@ export const AuthProvider = ({ children }) => {
   const [canToggleDevFeatures, setCanToggleDevFeatures] = useState(false);
 
   useEffect(() => {
+    clearLegacyGuestArtifacts();
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setIsLoading(true);
+
       if (!firebaseUser) {
         setUser(null);
         setToken(null);
@@ -43,27 +75,23 @@ export const AuthProvider = ({ children }) => {
 
       try {
         const nextToken = await firebaseUser.getIdToken();
-        const userSnapshot = await getDoc(doc(db, 'users', firebaseUser.uid));
-        const userData = userSnapshot.exists() ? userSnapshot.data() : {};
+        const sessionUser = await resolveSessionUser(firebaseUser);
         setToken(nextToken);
-        setUser({
-          id: firebaseUser.uid,
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          displayName:
-            userData.displayName ||
-            firebaseUser.displayName ||
-            firebaseUser.email?.split('@')[0] ||
-            'Quiz User',
-          profilePhotoUrl: firebaseUser.photoURL || null,
-        });
+        setUser(sessionUser);
         setIsAuthenticated(true);
+
+        if (sessionUser.isGuest) {
+          setCanToggleDevFeatures(false);
+          setIsDevFeaturesEnabled(false);
+          setIsLoading(false);
+          return;
+        }
 
         const savedSession = readDevAccessSession();
         const hasMatchingDevSession =
           Boolean(savedSession?.uid) &&
-          savedSession.uid === firebaseUser.uid;
-        const devSessionEmail = savedSession?.email || firebaseUser.email || '';
+          savedSession.uid === sessionUser.uid;
+        const devSessionEmail = savedSession?.email || sessionUser.email || '';
         const hasDevAccess =
           hasMatchingDevSession &&
           isDevFeatureConfigEnabled &&
@@ -93,6 +121,7 @@ export const AuthProvider = ({ children }) => {
       setUser(response.user);
       setToken(response.token);
       setIsAuthenticated(true);
+      clearDevAccessSession();
       const devEnabled = isDevCredentialMatch(email, password);
       writeDevAccessSession({ enabled: devEnabled, email, uid: response.user.uid });
       setIsDevFeaturesEnabled(devEnabled);
@@ -111,9 +140,27 @@ export const AuthProvider = ({ children }) => {
       setUser(response.user);
       setToken(response.token);
       setIsAuthenticated(true);
+      clearDevAccessSession();
       writeDevAccessSession({ enabled: false, email, uid: response.user.uid });
       setIsDevFeaturesEnabled(false);
       setCanToggleDevFeatures(false);
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }, []);
+
+  const createGuest = useCallback(async (displayName) => {
+    try {
+      const response = await apiCreateGuest(displayName);
+
+      setUser(response.user);
+      setToken(response.token);
+      setIsAuthenticated(true);
+      setIsDevFeaturesEnabled(false);
+      setCanToggleDevFeatures(false);
+      clearDevAccessSession();
 
       return { success: true };
     } catch (error) {
@@ -167,15 +214,18 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated,
       isLoading,
       isDevFeaturesEnabled,
+      isGuestUser: Boolean(user?.isGuest),
       canToggleDevFeatures,
       toggleDevFeatures,
       login,
       register,
+      createGuest,
       updateUserDisplayName,
       logout,
     }),
     [
       canToggleDevFeatures,
+      createGuest,
       isAuthenticated,
       isDevFeaturesEnabled,
       isLoading,

@@ -1,8 +1,7 @@
-
 import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Navigate } from 'react-router-dom';
-import { Archive, ArchiveRestore, Plus, Trash2, Upload } from 'lucide-react';
+import { Archive, ArchiveRestore, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
@@ -30,10 +29,12 @@ import {
   updateAdminQuiz,
 } from '@/api/api.js';
 import { measureAsync } from '@/utils/performance.js';
-
+import { callGemini } from '@/ai/geminiClient';
+import { useQueryClient } from '@tanstack/react-query';
 const COURSE_DEFAULTS = {
   title: '',
-  description: '',
+  shortDescription: '',
+  longDescription: '',
   topic: '',
   courseCode: '',
   quizIds: '',
@@ -42,7 +43,8 @@ const COURSE_DEFAULTS = {
 
 const QUIZ_DEFAULTS = {
   title: '',
-  description: '',
+  shortDescription: '',
+  longDescription: '',
   topic: '',
   difficulty: 2,
   estimatedTime: 15,
@@ -68,7 +70,8 @@ const BULK_UPLOAD_TEMPLATE = '{\n  "questions": []\n}';
 const BULK_DEFAULTS = {
   selectedQuizId: '',
   title: '',
-  description: '',
+  shortDescription: '',
+  longDescription: '',
   topic: '',
   difficulty: 2,
   estimatedTime: 15,
@@ -79,6 +82,14 @@ const BULK_DEFAULTS = {
 const BULK_QUESTION_DEFAULTS = {
   uploadText: BULK_UPLOAD_TEMPLATE,
 };
+
+const QUIZ_SHORT_DESC_EXAMPLE = 'Deep dive into Big O notation, time complexity, and algorithm optimization techniques in this quiz';
+const QUIZ_LONG_DESC_EXAMPLE =
+  'Test your mastery of Python fundamentals through a series of real-world logic puzzles and syntax challenges. This quiz measures your readiness for advanced development projects and technical interviews.';
+const COURSE_SHORT_DESC_EXAMPLE =
+  'Master the high-stakes art of constructive feedback with a repeatable 4-step framework designed to turn difficult conversations into collaborative growth plans. Bridge the gap between performance and professional relationships by transforming vague "criticism" into a strategic roadmap for success. Built specifically for new managers and team leads, this is your blueprint for driving elite results without damaging trust.';
+const COURSE_LONG_DESC_EXAMPLE =
+  'Navigate the high-stakes landscape of the global energy transition—from the mechanical heart of solar and wind to the complex political machinery of decarbonization. Deconstruct the technical foundations of energy storage while tackling the structural puzzles of grid integration and market design. Move beyond pure engineering to analyze the socioeconomic forces and environmental regulations shaping our world. Emerge with the power to model energy outputs, evaluate massive infrastructure projects, and architect the data-driven policies required to secure a sustainable future.';
 
 const QUIZ_DIFFICULTY_OPTIONS = [
   { value: 1, label: 'Beginner' },
@@ -148,6 +159,7 @@ const DASHBOARD_SELECT_PAGE_SIZE = 150;
 const DevContentDashboard = () => {
   const { isDevFeaturesEnabled } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -175,6 +187,13 @@ const DevContentDashboard = () => {
   const [visibleCourseCount, setVisibleCourseCount] = useState(DASHBOARD_SELECT_PAGE_SIZE);
   const [visibleQuizCount, setVisibleQuizCount] = useState(DASHBOARD_SELECT_PAGE_SIZE);
   const [visibleQuestionCount, setVisibleQuestionCount] = useState(DASHBOARD_SELECT_PAGE_SIZE);
+  const [savingAction, setSavingAction] = useState({ key: '', label: '', progress: 0 });
+  const [aiStatus, setAiStatus] = useState({
+    quizShort: false,
+    quizLong: false,
+    courseShort: false,
+    courseLong: false,
+  });
 
   const selectedCourse = useMemo(
     () => courses.find((course) => course.id === selectedCourseId) || null,
@@ -237,8 +256,8 @@ const DevContentDashboard = () => {
     () =>
       selectedQuiz
         ? sortedCourses
-            .filter((course) => (course.quizIds || []).includes(selectedQuiz.id))
-            .map((course) => course.id)
+          .filter((course) => (course.quizIds || []).includes(selectedQuiz.id))
+          .map((course) => course.id)
         : [],
     [selectedQuiz, sortedCourses]
   );
@@ -256,8 +275,10 @@ const DevContentDashboard = () => {
     [sortedCourses, bulkLinkedCourseIds]
   );
 
-  const loadAllContent = async () => {
-    setIsLoading(true);
+  const loadAllContent = async (showLoader = true) => {
+    if (showLoader) {
+      setIsLoading(true);
+    }
     try {
       const snapshot = await measureAsync('query:admin-content-snapshot', () =>
         getAdminContentSnapshot()
@@ -272,7 +293,9 @@ const DevContentDashboard = () => {
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      if (showLoader) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -287,7 +310,9 @@ const DevContentDashboard = () => {
     }
     setCourseForm({
       title: selectedCourse.title || '',
-      description: selectedCourse.description || '',
+      shortDescription: selectedCourse.shortDescription || selectedCourse.description || '',
+      longDescription:
+        selectedCourse.longDescription || selectedCourse.description || selectedCourse.shortDescription || '',
       topic: selectedCourse.topic || '',
       courseCode: selectedCourse.courseCode || '',
       quizIds: (selectedCourse.quizIds || []).join(', '),
@@ -303,7 +328,9 @@ const DevContentDashboard = () => {
     }
     setQuizForm({
       title: selectedQuiz.title || '',
-      description: selectedQuiz.description || '',
+      shortDescription: selectedQuiz.shortDescription || selectedQuiz.description || '',
+      longDescription:
+        selectedQuiz.longDescription || selectedQuiz.description || selectedQuiz.shortDescription || '',
       topic: selectedQuiz.topic || '',
       difficulty: Number(selectedQuiz.difficulty) || 2,
       estimatedTime: Number(selectedQuiz.estimatedTime) || 15,
@@ -353,15 +380,44 @@ const DevContentDashboard = () => {
     setVisibleQuestionCount(DASHBOARD_SELECT_PAGE_SIZE);
   }, [questions.length]);
 
+  useEffect(() => {
+    if (!isSaving) return undefined;
+
+    const timerId = setInterval(() => {
+      setSavingAction((previous) => {
+        if (previous.progress >= 92) return previous;
+        const increment = previous.progress < 35 ? 12 : previous.progress < 70 ? 6 : 3;
+        return {
+          ...previous,
+          progress: Math.min(92, previous.progress + increment),
+        };
+      });
+    }, 180);
+
+    return () => clearInterval(timerId);
+  }, [isSaving]);
+
   if (!isDevFeaturesEnabled) {
     return <Navigate to="/quizzes" replace />;
   }
 
-  const withSaving = async (callback, successTitle) => {
+  const isActionRunning = (actionKey) => isSaving && savingAction.key === actionKey;
+  const clampedSavingProgress = Math.max(0, Math.min(100, savingAction.progress));
+
+  const withSaving = async (actionDetails, callback) => {
+    const { actionKey, pendingLabel, successTitle } = actionDetails;
     setIsSaving(true);
+    setSavingAction({
+      key: actionKey,
+      label: pendingLabel,
+      progress: 8,
+    });
     try {
       await callback();
-      await loadAllContent();
+      setSavingAction((previous) => ({ ...previous, progress: 96 }));
+      await loadAllContent(false);
+      await queryClient.invalidateQueries();
+      setSavingAction((previous) => ({ ...previous, progress: 100 }));
       toast({ title: successTitle });
     } catch (error) {
       toast({
@@ -371,43 +427,67 @@ const DevContentDashboard = () => {
       });
     } finally {
       setIsSaving(false);
+      setSavingAction({ key: '', label: '', progress: 0 });
     }
   };
 
   const handleCreateCourse = async () => {
-    await withSaving(async () => {
-      await createAdminCourse({
-        title: courseForm.title,
-        description: courseForm.description,
-        topic: courseForm.topic,
-        courseCode: courseForm.courseCode || undefined,
-        quizIds: parseCsvIds(courseForm.quizIds),
-        isArchived: Boolean(courseForm.isArchived),
-      });
-      setSelectedCourseId('');
-      setCourseForm(COURSE_DEFAULTS);
-    }, 'Course created');
+    await withSaving(
+      {
+        actionKey: 'create-course',
+        pendingLabel: 'Creating course...',
+        successTitle: 'Course created',
+      },
+      async () => {
+        await createAdminCourse({
+          title: courseForm.title,
+          shortDescription: courseForm.shortDescription,
+          longDescription: courseForm.longDescription,
+          topic: courseForm.topic,
+          courseCode: courseForm.courseCode || undefined,
+          quizIds: parseCsvIds(courseForm.quizIds),
+          isArchived: Boolean(courseForm.isArchived),
+        });
+        setSelectedCourseId('');
+        setCourseForm(COURSE_DEFAULTS);
+      }
+    );
   };
 
   const handleUpdateCourse = async () => {
     if (!selectedCourseId) return;
-    await withSaving(async () => {
-      await updateAdminCourse(selectedCourseId, {
-        title: courseForm.title,
-        description: courseForm.description,
-        topic: courseForm.topic,
-        courseCode: courseForm.courseCode || undefined,
-        quizIds: parseCsvIds(courseForm.quizIds),
-        isArchived: Boolean(courseForm.isArchived),
-      });
-    }, 'Course updated');
+    await withSaving(
+      {
+        actionKey: 'update-course',
+        pendingLabel: 'Saving course changes...',
+        successTitle: 'Course updated',
+      },
+      async () => {
+        await updateAdminCourse(selectedCourseId, {
+          title: courseForm.title,
+          shortDescription: courseForm.shortDescription,
+          longDescription: courseForm.longDescription,
+          topic: courseForm.topic,
+          courseCode: courseForm.courseCode || undefined,
+          quizIds: parseCsvIds(courseForm.quizIds),
+          isArchived: Boolean(courseForm.isArchived),
+        });
+      }
+    );
   };
 
   const handleToggleArchiveCourse = async () => {
     if (!selectedCourseId || !selectedCourse) return;
-    await withSaving(async () => {
-      await archiveAdminCourse(selectedCourseId, !selectedCourse.isArchived);
-    }, selectedCourse.isArchived ? 'Course restored' : 'Course archived');
+    await withSaving(
+      {
+        actionKey: 'toggle-archive-course',
+        pendingLabel: selectedCourse.isArchived ? 'Restoring course...' : 'Archiving course...',
+        successTitle: selectedCourse.isArchived ? 'Course restored' : 'Course archived',
+      },
+      async () => {
+        await archiveAdminCourse(selectedCourseId, !selectedCourse.isArchived);
+      }
+    );
   };
 
   const handleAddQuizToCourse = () => {
@@ -480,6 +560,81 @@ const DevContentDashboard = () => {
     setBulkCourseToAddId('');
   };
 
+  const handleAutoDifficultyFromQuestions = () => {
+    if (!selectedQuiz) {
+      toast({
+        title: 'Select a quiz first',
+        description: 'Choose a quiz to compute its difficulty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const questionIds = Array.isArray(selectedQuiz.questionIds) ? selectedQuiz.questionIds : [];
+    const difficulties = questionIds
+      .map((questionId) => questionById.get(questionId))
+      .filter(Boolean)
+      .map((question) => Number(question.difficulty))
+      .filter((value) => Number.isFinite(value));
+
+    if (difficulties.length === 0) {
+      toast({
+        title: 'No question difficulties found',
+        description: 'Link questions with difficulty values before computing a quiz difficulty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const average = difficulties.reduce((sum, value) => sum + value, 0) / difficulties.length;
+    const rounded = Math.round(average);
+    const clamped = Math.max(1, Math.min(3, rounded));
+
+    setQuizForm((previous) => ({ ...previous, difficulty: clamped }));
+    toast({
+      title: 'Difficulty updated',
+      description: `Computed difficulty ${clamped} from ${difficulties.length} question(s).`,
+    });
+  };
+
+  const handleAutoBulkDifficultyFromQuestions = () => {
+    const quiz = selectedBulkQuiz;
+    if (!quiz) {
+      toast({
+        title: 'Select a quiz first',
+        description: 'Choose a quiz to compute its difficulty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const questionIds = Array.isArray(quiz.questionIds) ? quiz.questionIds : [];
+    const difficulties = questionIds
+      .map((questionId) => questionById.get(questionId))
+      .filter(Boolean)
+      .map((question) => Number(question.difficulty))
+      .filter((value) => Number.isFinite(value));
+
+    if (difficulties.length === 0) {
+      toast({
+        title: 'No question difficulties found',
+        description: 'Link questions with difficulty values before computing a quiz difficulty.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const average = difficulties.reduce((sum, value) => sum + value, 0) / difficulties.length;
+    const rounded = Math.round(average);
+    const clamped = Math.max(1, Math.min(3, rounded));
+
+    setBulkForm((previous) => ({ ...previous, difficulty: clamped }));
+    toast({
+      title: 'Difficulty updated',
+      description: `Computed difficulty ${clamped} from ${difficulties.length} question(s).`,
+    });
+  };
+
   const handleRemoveCourseFromBulkQuiz = (courseIdToRemove) => {
     const nextCourseIds = bulkLinkedCourseIds.filter((courseId) => courseId !== courseIdToRemove);
     setBulkLinkedCourseIds(nextCourseIds);
@@ -487,106 +642,164 @@ const DevContentDashboard = () => {
   };
 
   const handleCreateQuiz = async () => {
-    await withSaving(async () => {
-      const createdQuiz = await createAdminQuiz({
-        quiz: {
+    await withSaving(
+      {
+        actionKey: 'create-quiz',
+        pendingLabel: 'Creating quiz...',
+        successTitle: 'Quiz created',
+      },
+      async () => {
+        const createdQuiz = await createAdminQuiz({
+          quiz: {
+            title: quizForm.title,
+            shortDescription: quizForm.shortDescription,
+            longDescription: quizForm.longDescription,
+            topic: quizForm.topic,
+            difficulty: Number(quizForm.difficulty),
+            estimatedTime: Number(quizForm.estimatedTime),
+            isTimePerQuestion: Boolean(quizForm.isTimePerQuestion),
+            questionIds: [],
+            isArchived: Boolean(quizForm.isArchived),
+          },
+          courseId: '',
+        });
+        await syncQuizCourseAssociations(createdQuiz.id, quizLinkedCourseIds);
+        setSelectedQuizId('');
+        setQuizLinkedCourseIds([]);
+        setQuizCourseToAddId('');
+        setQuizForm(QUIZ_DEFAULTS);
+      }
+    );
+  };
+  const handleUpdateQuiz = async () => {
+    if (!selectedQuizId) return;
+    await withSaving(
+      {
+        actionKey: 'update-quiz',
+        pendingLabel: 'Saving quiz changes...',
+        successTitle: 'Quiz updated',
+      },
+      async () => {
+        await updateAdminQuiz(selectedQuizId, {
           title: quizForm.title,
-          description: quizForm.description,
+          shortDescription: quizForm.shortDescription,
+          longDescription: quizForm.longDescription,
           topic: quizForm.topic,
           difficulty: Number(quizForm.difficulty),
           estimatedTime: Number(quizForm.estimatedTime),
           isTimePerQuestion: Boolean(quizForm.isTimePerQuestion),
-          questionIds: [],
+          questionIds: Array.isArray(selectedQuiz?.questionIds) ? selectedQuiz.questionIds : [],
           isArchived: Boolean(quizForm.isArchived),
-        },
-        courseId: '',
-      });
-      await syncQuizCourseAssociations(createdQuiz.id, quizLinkedCourseIds);
-      setSelectedQuizId('');
-      setQuizLinkedCourseIds([]);
-      setQuizCourseToAddId('');
-      setQuizForm(QUIZ_DEFAULTS);
-    }, 'Quiz created');
-  };
-  const handleUpdateQuiz = async () => {
-    if (!selectedQuizId) return;
-    await withSaving(async () => {
-      await updateAdminQuiz(selectedQuizId, {
-        title: quizForm.title,
-        description: quizForm.description,
-        topic: quizForm.topic,
-        difficulty: Number(quizForm.difficulty),
-        estimatedTime: Number(quizForm.estimatedTime),
-        isTimePerQuestion: Boolean(quizForm.isTimePerQuestion),
-        questionIds: Array.isArray(selectedQuiz?.questionIds) ? selectedQuiz.questionIds : [],
-        isArchived: Boolean(quizForm.isArchived),
-      });
-      await syncQuizCourseAssociations(selectedQuizId, quizLinkedCourseIds);
-    }, 'Quiz updated');
+        });
+        await syncQuizCourseAssociations(selectedQuizId, quizLinkedCourseIds);
+      }
+    );
   };
 
   const handleToggleArchiveQuiz = async () => {
     if (!selectedQuizId || !selectedQuiz) return;
-    await withSaving(async () => {
-      await archiveAdminQuiz(selectedQuizId, !selectedQuiz.isArchived);
-    }, selectedQuiz.isArchived ? 'Quiz restored' : 'Quiz archived');
+    await withSaving(
+      {
+        actionKey: 'toggle-archive-quiz',
+        pendingLabel: selectedQuiz.isArchived ? 'Restoring quiz...' : 'Archiving quiz...',
+        successTitle: selectedQuiz.isArchived ? 'Quiz restored' : 'Quiz archived',
+      },
+      async () => {
+        await archiveAdminQuiz(selectedQuizId, !selectedQuiz.isArchived);
+      }
+    );
   };
 
   const handleAddQuestionToQuiz = async () => {
     if (!selectedQuizId || !questionToAddId) return;
-    await withSaving(async () => {
-      await addQuestionsToQuiz(selectedQuizId, [questionToAddId]);
-      setQuestionToAddId('');
-    }, 'Question added to quiz');
+    await withSaving(
+      {
+        actionKey: 'add-question-to-quiz',
+        pendingLabel: 'Adding question to quiz...',
+        successTitle: 'Question added to quiz',
+      },
+      async () => {
+        await addQuestionsToQuiz(selectedQuizId, [questionToAddId]);
+        setQuestionToAddId('');
+      }
+    );
   };
 
   const handleRemoveQuestionFromQuiz = async (questionId) => {
     if (!selectedQuizId) return;
-    await withSaving(async () => {
-      await removeQuestionFromQuiz(selectedQuizId, questionId);
-    }, 'Question removed from quiz');
+    await withSaving(
+      {
+        actionKey: 'remove-question-from-quiz',
+        pendingLabel: 'Removing question from quiz...',
+        successTitle: 'Question removed from quiz',
+      },
+      async () => {
+        await removeQuestionFromQuiz(selectedQuizId, questionId);
+      }
+    );
   };
 
   const handleCreateQuestion = async () => {
-    await withSaving(async () => {
-      const metadata = JSON.parse(questionForm.metadataJson);
-      await createAdminQuestion({
-        type: questionForm.type,
-        question_text: questionForm.question_text,
-        metadata,
-        difficulty: Number(questionForm.difficulty),
-        topic: questionForm.topic,
-        skillCategory: Number(questionForm.skillCategory),
-        explanation: questionForm.explanation,
-        isArchived: Boolean(questionForm.isArchived),
-      });
-      setSelectedQuestionId('');
-      setQuestionForm(QUESTION_DEFAULTS);
-    }, 'Question created');
+    await withSaving(
+      {
+        actionKey: 'create-question',
+        pendingLabel: 'Creating question...',
+        successTitle: 'Question created',
+      },
+      async () => {
+        const metadata = JSON.parse(questionForm.metadataJson);
+        await createAdminQuestion({
+          type: questionForm.type,
+          question_text: questionForm.question_text,
+          metadata,
+          difficulty: Number(questionForm.difficulty),
+          topic: questionForm.topic,
+          skillCategory: Number(questionForm.skillCategory),
+          explanation: questionForm.explanation,
+          isArchived: Boolean(questionForm.isArchived),
+        });
+        setSelectedQuestionId('');
+        setQuestionForm(QUESTION_DEFAULTS);
+      }
+    );
   };
 
   const handleUpdateQuestion = async () => {
     if (!selectedQuestionId) return;
-    await withSaving(async () => {
-      const metadata = JSON.parse(questionForm.metadataJson);
-      await updateAdminQuestion(selectedQuestionId, {
-        type: questionForm.type,
-        question_text: questionForm.question_text,
-        metadata,
-        difficulty: Number(questionForm.difficulty),
-        topic: questionForm.topic,
-        skillCategory: Number(questionForm.skillCategory),
-        explanation: questionForm.explanation,
-        isArchived: Boolean(questionForm.isArchived),
-      });
-    }, 'Question updated');
+    await withSaving(
+      {
+        actionKey: 'update-question',
+        pendingLabel: 'Saving question changes...',
+        successTitle: 'Question updated',
+      },
+      async () => {
+        const metadata = JSON.parse(questionForm.metadataJson);
+        await updateAdminQuestion(selectedQuestionId, {
+          type: questionForm.type,
+          question_text: questionForm.question_text,
+          metadata,
+          difficulty: Number(questionForm.difficulty),
+          topic: questionForm.topic,
+          skillCategory: Number(questionForm.skillCategory),
+          explanation: questionForm.explanation,
+          isArchived: Boolean(questionForm.isArchived),
+        });
+      }
+    );
   };
 
   const handleToggleArchiveQuestion = async () => {
     if (!selectedQuestionId || !selectedQuestion) return;
-    await withSaving(async () => {
-      await archiveAdminQuestion(selectedQuestionId, !selectedQuestion.isArchived);
-    }, selectedQuestion.isArchived ? 'Question restored' : 'Question archived');
+    await withSaving(
+      {
+        actionKey: 'toggle-archive-question',
+        pendingLabel: selectedQuestion.isArchived ? 'Restoring question...' : 'Archiving question...',
+        successTitle: selectedQuestion.isArchived ? 'Question restored' : 'Question archived',
+      },
+      async () => {
+        await archiveAdminQuestion(selectedQuestionId, !selectedQuestion.isArchived);
+      }
+    );
   };
 
   const handleBulkQuizUploadFile = async (event) => {
@@ -635,7 +848,9 @@ const DevContentDashboard = () => {
     setBulkForm({
       selectedQuizId: quiz.id,
       title: quiz.title || '',
-      description: quiz.description || '',
+      shortDescription: quiz.shortDescription || quiz.description || '',
+      longDescription:
+        quiz.longDescription || quiz.description || quiz.shortDescription || '',
       topic: quiz.topic || '',
       difficulty: Number(quiz.difficulty) || 2,
       estimatedTime: Number(quiz.estimatedTime) || 15,
@@ -656,84 +871,273 @@ const DevContentDashboard = () => {
   };
 
   const handleBulkUpsertQuiz = async () => {
-    await withSaving(async () => {
-      const uploadPayload = JSON.parse(bulkForm.uploadText);
-      const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
+    await withSaving(
+      {
+        actionKey: 'bulk-upsert-quiz',
+        pendingLabel: bulkForm.selectedQuizId ? 'Applying bulk quiz edits...' : 'Creating quiz from upload...',
+        successTitle: bulkForm.selectedQuizId ? 'Bulk quiz edits applied' : 'Bulk quiz created',
+      },
+      async () => {
+        const uploadPayload = JSON.parse(bulkForm.uploadText);
+        const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
 
-      if (!bulkForm.selectedQuizId) {
-        const createdQuizResult = await createQuizFromQuestionUpload({
-          quizPayload: {
-            title: bulkForm.title,
-            description: bulkForm.description,
-            topic: bulkForm.topic,
-            difficulty: Number(bulkForm.difficulty),
-            estimatedTime: Number(bulkForm.estimatedTime),
-            isTimePerQuestion: Boolean(bulkForm.isTimePerQuestion),
-            questionIds: [],
-            isArchived: false,
-          },
-          uploadPayload,
-          courseId: '',
+        if (!bulkForm.selectedQuizId) {
+          const createdQuizResult = await createQuizFromQuestionUpload({
+            quizPayload: {
+              title: bulkForm.title,
+              shortDescription: bulkForm.shortDescription,
+              longDescription: bulkForm.longDescription,
+              topic: bulkForm.topic,
+              difficulty: Number(bulkForm.difficulty),
+              estimatedTime: Number(bulkForm.estimatedTime),
+              isTimePerQuestion: Boolean(bulkForm.isTimePerQuestion),
+              questionIds: [],
+              isArchived: false,
+            },
+            uploadPayload,
+            courseId: '',
+          });
+          await syncQuizCourseAssociations(createdQuizResult.quiz.id, bulkLinkedCourseIds);
+          setBulkForm(BULK_DEFAULTS);
+          setBulkLinkedCourseIds([]);
+          setBulkCourseToAddId('');
+          return;
+        }
+
+        const selectedQuizForBulk = quizzes.find((entry) => entry.id === bulkForm.selectedQuizId);
+        if (!selectedQuizForBulk) {
+          throw new Error('Selected quiz was not found');
+        }
+
+        const existingQuestionIds = Array.isArray(selectedQuizForBulk.questionIds)
+          ? selectedQuizForBulk.questionIds
+          : [];
+
+        if (existingQuestionIds.length !== uploadedQuestions.length) {
+          throw new Error(
+            `Question count mismatch: selected quiz has ${existingQuestionIds.length} linked questions but upload has ${uploadedQuestions.length}.`
+          );
+        }
+
+        for (let index = 0; index < existingQuestionIds.length; index += 1) {
+          const questionId = existingQuestionIds[index];
+          const payload = uploadedQuestions[index];
+          await updateAdminQuestion(questionId, {
+            ...payload,
+            isArchived: Boolean(payload?.isArchived),
+          });
+        }
+
+        await updateAdminQuiz(selectedQuizForBulk.id, {
+          title: bulkForm.title,
+          shortDescription: bulkForm.shortDescription,
+          longDescription: bulkForm.longDescription,
+          topic: bulkForm.topic,
+          difficulty: Number(bulkForm.difficulty),
+          estimatedTime: Number(bulkForm.estimatedTime),
+          isTimePerQuestion: Boolean(bulkForm.isTimePerQuestion),
+          questionIds: existingQuestionIds,
+          isArchived: Boolean(selectedQuizForBulk.isArchived),
         });
-        await syncQuizCourseAssociations(createdQuizResult.quiz.id, bulkLinkedCourseIds);
-        setBulkForm(BULK_DEFAULTS);
-        setBulkLinkedCourseIds([]);
-        setBulkCourseToAddId('');
-        return;
+        await syncQuizCourseAssociations(selectedQuizForBulk.id, bulkLinkedCourseIds);
       }
-
-      const selectedQuizForBulk = quizzes.find((entry) => entry.id === bulkForm.selectedQuizId);
-      if (!selectedQuizForBulk) {
-        throw new Error('Selected quiz was not found');
-      }
-
-      const existingQuestionIds = Array.isArray(selectedQuizForBulk.questionIds)
-        ? selectedQuizForBulk.questionIds
-        : [];
-
-      if (existingQuestionIds.length !== uploadedQuestions.length) {
-        throw new Error(
-          `Question count mismatch: selected quiz has ${existingQuestionIds.length} linked questions but upload has ${uploadedQuestions.length}.`
-        );
-      }
-
-      for (let index = 0; index < existingQuestionIds.length; index += 1) {
-        const questionId = existingQuestionIds[index];
-        const payload = uploadedQuestions[index];
-        await updateAdminQuestion(questionId, {
-          ...payload,
-          isArchived: Boolean(payload?.isArchived),
-        });
-      }
-
-      await updateAdminQuiz(selectedQuizForBulk.id, {
-        title: bulkForm.title,
-        description: bulkForm.description,
-        topic: bulkForm.topic,
-        difficulty: Number(bulkForm.difficulty),
-        estimatedTime: Number(bulkForm.estimatedTime),
-        isTimePerQuestion: Boolean(bulkForm.isTimePerQuestion),
-        questionIds: existingQuestionIds,
-        isArchived: Boolean(selectedQuizForBulk.isArchived),
-      });
-      await syncQuizCourseAssociations(selectedQuizForBulk.id, bulkLinkedCourseIds);
-    }, bulkForm.selectedQuizId ? 'Bulk quiz edits applied' : 'Bulk quiz created');
+    );
   };
 
   const handleBulkCreateQuestions = async () => {
-    await withSaving(async () => {
-      const uploadPayload = JSON.parse(bulkQuestionForm.uploadText);
-      const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
+    await withSaving(
+      {
+        actionKey: 'bulk-create-questions',
+        pendingLabel: 'Creating questions from upload...',
+        successTitle: 'Questions created from upload',
+      },
+      async () => {
+        const uploadPayload = JSON.parse(bulkQuestionForm.uploadText);
+        const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
 
-      for (const questionPayload of uploadedQuestions) {
-        await createAdminQuestion({
-          ...questionPayload,
-          isArchived: Boolean(questionPayload?.isArchived),
-        });
+        for (const questionPayload of uploadedQuestions) {
+          await createAdminQuestion({
+            ...questionPayload,
+            isArchived: Boolean(questionPayload?.isArchived),
+          });
+        }
+
+        setBulkQuestionForm(BULK_QUESTION_DEFAULTS);
       }
+    );
+  };
 
-      setBulkQuestionForm(BULK_QUESTION_DEFAULTS);
-    }, 'Questions created from upload');
+  const extractGeminiText = (result) => {
+    if (!result) return '';
+    if (typeof result === 'string') return result;
+    if (typeof result.text === 'string') return result.text;
+    if (typeof result.message === 'string') return result.message;
+
+    const candidateParts = result?.candidates?.[0]?.content?.parts;
+    if (Array.isArray(candidateParts)) {
+      const combined = candidateParts
+        .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+        .join(' ')
+        .trim();
+      if (combined) return combined;
+    }
+
+    const candidateText = result?.candidates?.[0]?.content?.text;
+    if (typeof candidateText === 'string') return candidateText;
+
+    return '';
+  };
+
+  const generateQuizShortDescription = async () => {
+    const questionIds = Array.isArray(selectedQuiz?.questionIds) ? selectedQuiz.questionIds : [];
+    const questionContext = questionIds
+      .map((questionId) => questionById.get(questionId))
+      .filter(Boolean)
+      .map((question) => ({
+        question: String(question?.question_text || ''),
+        difficulty: Number(question?.difficulty) || 2,
+        topic: String(question?.topic || ''),
+      }));
+
+    const context = {
+      quizTitle: quizForm.title,
+      topic: quizForm.topic,
+      difficulty: Number(quizForm.difficulty) || 2,
+      questions: questionContext,
+    };
+
+    const prompt = `Write a short quiz description in 1 sentence with this style strictly. Style example: "${QUIZ_SHORT_DESC_EXAMPLE}".
+Use this quiz context JSON:
+${JSON.stringify(context, null, 2)}
+Return only the description text.`;
+
+    try {
+      setAiStatus((previous) => ({ ...previous, quizShort: true }));
+      const response = await callGemini(prompt);
+      const generatedText = extractGeminiText(response).trim();
+      if (!generatedText) {
+        throw new Error('No quiz short description returned.');
+      }
+      setQuizForm((previous) => ({ ...previous, shortDescription: generatedText }));
+    } catch (error) {
+      console.error(error);
+      alert('AI generation failed');
+    } finally {
+      setAiStatus((previous) => ({ ...previous, quizShort: false }));
+    }
+  };
+
+  const generateQuizLongDescription = async () => {
+    const questionIds = Array.isArray(selectedQuiz?.questionIds) ? selectedQuiz.questionIds : [];
+    const questionContext = questionIds
+      .map((questionId) => questionById.get(questionId))
+      .filter(Boolean)
+      .map((question) => ({
+        question: String(question?.question_text || ''),
+        difficulty: Number(question?.difficulty) || 2,
+        topic: String(question?.topic || ''),
+      }));
+
+    const context = {
+      quizTitle: quizForm.title,
+      topic: quizForm.topic,
+      difficulty: Number(quizForm.difficulty) || 2,
+      questions: questionContext,
+    };
+
+    const prompt = `Write a long quiz description. Style example: "${QUIZ_LONG_DESC_EXAMPLE}".
+Use this quiz context JSON:
+${JSON.stringify(context, null, 2)}
+Return only the description text.`;
+
+    try {
+      setAiStatus((previous) => ({ ...previous, quizLong: true }));
+      const response = await callGemini(prompt);
+      const generatedText = extractGeminiText(response).trim();
+      if (!generatedText) {
+        throw new Error('No quiz long description returned.');
+      }
+      setQuizForm((previous) => ({ ...previous, longDescription: generatedText }));
+    } catch (error) {
+      console.error(error);
+      alert('AI generation failed');
+    } finally {
+      setAiStatus((previous) => ({ ...previous, quizLong: false }));
+    }
+  };
+
+  const generateCourseShortDescription = async () => {
+    const quizContext = courseQuizIds
+      .map((quizId) => quizById.get(quizId))
+      .filter(Boolean)
+      .map((quiz) => ({
+        title: String(quiz?.title || ''),
+        shortDescription: String(quiz?.shortDescription || quiz?.description || ''),
+        difficulty: Number(quiz?.difficulty) || 2,
+      }));
+
+    const context = {
+      courseTitle: courseForm.title,
+      topic: courseForm.topic,
+      quizzes: quizContext,
+    };
+
+    const prompt = `Write a short course description in 2-3 sentences strictly by this style. Style example: "${COURSE_SHORT_DESC_EXAMPLE}".
+Use this course context JSON:
+${JSON.stringify(context, null, 2)}
+Return only the description text.`;
+
+    try {
+      setAiStatus((previous) => ({ ...previous, courseShort: true }));
+      const response = await callGemini(prompt);
+      const generatedText = extractGeminiText(response).trim();
+      if (!generatedText) {
+        throw new Error('No course short description returned.');
+      }
+      setCourseForm((previous) => ({ ...previous, shortDescription: generatedText }));
+    } catch (error) {
+      console.error(error);
+      alert('AI generation failed');
+    } finally {
+      setAiStatus((previous) => ({ ...previous, courseShort: false }));
+    }
+  };
+
+  const generateCourseLongDescription = async () => {
+    const quizContext = courseQuizIds
+      .map((quizId) => quizById.get(quizId))
+      .filter(Boolean)
+      .map((quiz) => ({
+        title: String(quiz?.title || ''),
+        shortDescription: String(quiz?.shortDescription || quiz?.description || ''),
+        difficulty: Number(quiz?.difficulty) || 2,
+      }));
+
+    const context = {
+      courseTitle: courseForm.title,
+      topic: courseForm.topic,
+      quizzes: quizContext,
+    };
+
+    const prompt = `Write a long course description. Style example: "${COURSE_LONG_DESC_EXAMPLE}".
+Use this course context JSON:
+${JSON.stringify(context, null, 2)}
+Return only the description text.`;
+
+    try {
+      setAiStatus((previous) => ({ ...previous, courseLong: true }));
+      const response = await callGemini(prompt);
+      const generatedText = extractGeminiText(response).trim();
+      if (!generatedText) {
+        throw new Error('No course long description returned.');
+      }
+      setCourseForm((previous) => ({ ...previous, longDescription: generatedText }));
+    } catch (error) {
+      console.error(error);
+      alert('AI generation failed');
+    } finally {
+      setAiStatus((previous) => ({ ...previous, courseLong: false }));
+    }
   };
 
   const handleRemoveDuplicates = async () => {
@@ -800,6 +1204,28 @@ const DevContentDashboard = () => {
               </CardDescription>
             </CardHeader>
           </Card>
+
+          {isSaving ? (
+            <Card className="mb-6 border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base text-blue-900 dark:text-blue-200">Action in progress</CardTitle>
+                <CardDescription className="text-blue-800 dark:text-blue-300">
+                  {savingAction.label || 'Processing update...'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-200 dark:bg-blue-400"
+                    style={{ width: `${clampedSavingProgress}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">
+                  {Math.round(clampedSavingProgress)}%
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
 
           {isLoading ? (
             <div className="text-center py-12">
@@ -922,28 +1348,83 @@ const DevContentDashboard = () => {
                     </div>
 
                     <div>
-                      <Label>Description</Label>
+                      <Label>Short description</Label>
                       <textarea
-                        className="mt-1 min-h-[100px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-                        value={courseForm.description}
-                        onChange={(event) => setCourseForm((v) => ({ ...v, description: event.target.value }))}
+                        className="mt-1 min-h-[80px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                        value={courseForm.shortDescription}
+                        onChange={(event) =>
+                          setCourseForm((v) => ({ ...v, shortDescription: event.target.value }))
+                        }
                       />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={generateCourseShortDescription}
+                        disabled={isSaving || aiStatus.courseShort}
+                      >
+                        {aiStatus.courseShort ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Generate with AI'
+                        )}
+                      </Button>
+                    </div>
+                    <div>
+                      <Label>Long description</Label>
+                      <textarea
+                        className="mt-1 min-h-[120px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                        value={courseForm.longDescription}
+                        onChange={(event) =>
+                          setCourseForm((v) => ({ ...v, longDescription: event.target.value }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={generateCourseLongDescription}
+                        disabled={isSaving || aiStatus.courseLong}
+                      >
+                        {aiStatus.courseLong ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Generate with AI'
+                        )}
+                      </Button>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
                       <Button disabled={isSaving} onClick={handleCreateCourse}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create course
+                        {isActionRunning('create-course') ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="h-4 w-4 mr-2" />
+                        )}
+                        {isActionRunning('create-course') ? 'Creating course...' : 'Create course'}
                       </Button>
                       <Button variant="outline" disabled={isSaving || !selectedCourseId} onClick={handleUpdateCourse}>
-                        Save changes
+                        {isActionRunning('update-course') ? 'Saving...' : 'Save changes'}
                       </Button>
                       <Button
                         variant="outline"
                         disabled={isSaving || !selectedCourseId}
                         onClick={handleToggleArchiveCourse}
                       >
-                        {selectedCourse?.isArchived ? (
+                        {isActionRunning('toggle-archive-course') ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            {selectedCourse?.isArchived ? 'Restoring...' : 'Archiving...'}
+                          </>
+                        ) : selectedCourse?.isArchived ? (
                           <>
                             <ArchiveRestore className="h-4 w-4 mr-2" />
                             Restore
@@ -1025,6 +1506,16 @@ const DevContentDashboard = () => {
                             </option>
                           ))}
                         </select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                          onClick={handleAutoDifficultyFromQuestions}
+                          disabled={!selectedQuizId}
+                        >
+                          Auto-calc from questions
+                        </Button>
                       </div>
                       <div>
                         <Label>Estimated time (minutes)</Label>
@@ -1037,12 +1528,58 @@ const DevContentDashboard = () => {
                     </div>
 
                     <div>
-                      <Label>Description</Label>
+                      <Label>Short description</Label>
                       <textarea
-                        className="mt-1 min-h-[100px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-                        value={quizForm.description}
-                        onChange={(event) => setQuizForm((v) => ({ ...v, description: event.target.value }))}
+                        className="mt-1 min-h-[80px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                        value={quizForm.shortDescription}
+                        onChange={(event) =>
+                          setQuizForm((v) => ({ ...v, shortDescription: event.target.value }))
+                        }
                       />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={generateQuizShortDescription}
+                        disabled={isSaving || aiStatus.quizShort}
+                      >
+                        {aiStatus.quizShort ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Generate with AI'
+                        )}
+                      </Button>
+                    </div>
+                    <div>
+                      <Label>Long description</Label>
+                      <textarea
+                        className="mt-1 min-h-[120px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                        value={quizForm.longDescription}
+                        onChange={(event) =>
+                          setQuizForm((v) => ({ ...v, longDescription: event.target.value }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={generateQuizLongDescription}
+                        disabled={isSaving || aiStatus.quizLong}
+                      >
+                        {aiStatus.quizLong ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Generate with AI'
+                        )}
+                      </Button>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -1107,7 +1644,11 @@ const DevContentDashboard = () => {
                           {(selectedQuiz.questionIds || []).map((questionId) => (
                             <Badge key={questionId} variant="outline" className="gap-2">
                               {formatQuestionLabel(questionById.get(questionId), 52)}
-                              <button type="button" onClick={() => handleRemoveQuestionFromQuiz(questionId)}>
+                              <button
+                                type="button"
+                                disabled={isSaving}
+                                onClick={() => handleRemoveQuestionFromQuiz(questionId)}
+                              >
                                 <Trash2 className="h-3 w-3" />
                               </button>
                             </Badge>
@@ -1144,7 +1685,14 @@ const DevContentDashboard = () => {
                             ) : null}
                           </div>
                           <Button variant="outline" onClick={handleAddQuestionToQuiz} disabled={isSaving || !questionToAddId}>
-                            Add question
+                            {isActionRunning('add-question-to-quiz') ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Adding question...
+                              </>
+                            ) : (
+                              'Add question'
+                            )}
                           </Button>
                         </div>
                       </div>
@@ -1152,18 +1700,27 @@ const DevContentDashboard = () => {
 
                     <div className="flex flex-wrap gap-2">
                       <Button disabled={isSaving} onClick={handleCreateQuiz}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create quiz
+                        {isActionRunning('create-quiz') ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="h-4 w-4 mr-2" />
+                        )}
+                        {isActionRunning('create-quiz') ? 'Creating quiz...' : 'Create quiz'}
                       </Button>
                       <Button variant="outline" disabled={isSaving || !selectedQuizId} onClick={handleUpdateQuiz}>
-                        Save changes
+                        {isActionRunning('update-quiz') ? 'Saving...' : 'Save changes'}
                       </Button>
                       <Button
                         variant="outline"
                         disabled={isSaving || !selectedQuizId}
                         onClick={handleToggleArchiveQuiz}
                       >
-                        {selectedQuiz?.isArchived ? (
+                        {isActionRunning('toggle-archive-quiz') ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            {selectedQuiz?.isArchived ? 'Restoring...' : 'Archiving...'}
+                          </>
+                        ) : selectedQuiz?.isArchived ? (
                           <>
                             <ArchiveRestore className="h-4 w-4 mr-2" />
                             Restore
@@ -1322,18 +1879,27 @@ const DevContentDashboard = () => {
 
                     <div className="flex flex-wrap gap-2">
                       <Button disabled={isSaving} onClick={handleCreateQuestion}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create question
+                        {isActionRunning('create-question') ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Plus className="h-4 w-4 mr-2" />
+                        )}
+                        {isActionRunning('create-question') ? 'Creating question...' : 'Create question'}
                       </Button>
                       <Button variant="outline" disabled={isSaving || !selectedQuestionId} onClick={handleUpdateQuestion}>
-                        Save changes
+                        {isActionRunning('update-question') ? 'Saving...' : 'Save changes'}
                       </Button>
                       <Button
                         variant="outline"
                         disabled={isSaving || !selectedQuestionId}
                         onClick={handleToggleArchiveQuestion}
                       >
-                        {selectedQuestion?.isArchived ? (
+                        {isActionRunning('toggle-archive-question') ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            {selectedQuestion?.isArchived ? 'Restoring...' : 'Archiving...'}
+                          </>
+                        ) : selectedQuestion?.isArchived ? (
                           <>
                             <ArchiveRestore className="h-4 w-4 mr-2" />
                             Restore
@@ -1413,6 +1979,16 @@ const DevContentDashboard = () => {
                             </option>
                           ))}
                         </select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-2"
+                          onClick={handleAutoBulkDifficultyFromQuestions}
+                          disabled={!bulkForm.selectedQuizId}
+                        >
+                          Auto-calc from questions
+                        </Button>
                       </div>
                       <div>
                         <Label>Estimated time (minutes)</Label>
@@ -1433,11 +2009,23 @@ const DevContentDashboard = () => {
                     </div>
 
                     <div>
-                      <Label>Description</Label>
+                      <Label>Short description</Label>
                       <textarea
-                        className="mt-1 min-h-[90px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-                        value={bulkForm.description}
-                        onChange={(event) => setBulkForm((v) => ({ ...v, description: event.target.value }))}
+                        className="mt-1 min-h-[80px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                        value={bulkForm.shortDescription}
+                        onChange={(event) =>
+                          setBulkForm((v) => ({ ...v, shortDescription: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label>Long description</Label>
+                      <textarea
+                        className="mt-1 min-h-[120px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                        value={bulkForm.longDescription}
+                        onChange={(event) =>
+                          setBulkForm((v) => ({ ...v, longDescription: event.target.value }))
+                        }
                       />
                     </div>
 
@@ -1511,8 +2099,18 @@ const DevContentDashboard = () => {
                     </div>
 
                     <Button disabled={isSaving} onClick={handleBulkUpsertQuiz}>
-                      <Upload className="h-4 w-4 mr-2" />
-                      {bulkForm.selectedQuizId ? 'Apply bulk edits to selected quiz' : 'Create quiz from upload'}
+                      {isActionRunning('bulk-upsert-quiz') ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4 mr-2" />
+                      )}
+                      {isActionRunning('bulk-upsert-quiz')
+                        ? bulkForm.selectedQuizId
+                          ? 'Applying edits...'
+                          : 'Creating quiz...'
+                        : bulkForm.selectedQuizId
+                          ? 'Apply bulk edits to selected quiz'
+                          : 'Create quiz from upload'}
                     </Button>
                   </CardContent>
                 </Card>
@@ -1542,8 +2140,14 @@ const DevContentDashboard = () => {
                     </div>
 
                     <Button disabled={isSaving} onClick={handleBulkCreateQuestions}>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Create questions from upload
+                      {isActionRunning('bulk-create-questions') ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4 mr-2" />
+                      )}
+                      {isActionRunning('bulk-create-questions')
+                        ? 'Creating questions...'
+                        : 'Create questions from upload'}
                     </Button>
                   </CardContent>
                 </Card>

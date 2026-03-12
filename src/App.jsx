@@ -3,19 +3,22 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/hooks/useAuth.js';
 import { ThemeProvider } from '@/context/ThemeContext.jsx';
 import { Toaster } from '@/components/ui/toaster.jsx';
-import ProtectedRoute from '@/components/ProtectedRoute.jsx';
 import WallpaperToggleButton from '@/components/layout/WallpaperToggleButton.jsx';
 import SiteFooter from '@/components/layout/SiteFooter.jsx';
 const Login = lazy(() => import('@/pages/Login.jsx'));
 const Register = lazy(() => import('@/pages/Register.jsx'));
+const AuthPrompt = lazy(() => import('@/pages/AuthPrompt.jsx'));
+const LandingPage = lazy(() => import('@/pages/LandingPage.jsx'));
 const QuizList = lazy(() => import('@/pages/QuizList.jsx'));
 const QuizReady = lazy(() => import('@/pages/QuizReady.jsx'));
 const QuizPage = lazy(() => import('@/pages/QuizPage.jsx'));
 const ResultsPage = lazy(() => import('@/pages/ResultsPage.jsx'));
+const InsightsPage = lazy(() => import('@/pages/InsightsPage.jsx'));
 const CoursesPage = lazy(() => import('@/pages/CoursesPage.jsx'));
 const CourseDetailPage = lazy(() => import('@/pages/CourseDetailPage.jsx'));
 const QuizDetailPage = lazy(() => import('@/pages/QuizDetailPage.jsx'));
 const DevContentDashboard = lazy(() => import('@/pages/DevContentDashboard.jsx'));
+const DevUsersDashboard = lazy(() => import('@/pages/DevUsersDashboard.jsx'));
 
 const PageFallback = () => (
   <div className="min-h-screen flex items-center justify-center px-4">
@@ -26,11 +29,7 @@ const PageFallback = () => (
   </div>
 );
 
-const renderRoute = (element, protectedRoute = false) => {
-  const content = <Suspense fallback={<PageFallback />}>{element}</Suspense>;
-  if (!protectedRoute) return content;
-  return <ProtectedRoute>{content}</ProtectedRoute>;
-};
+const renderRoute = (element) => <Suspense fallback={<PageFallback />}>{element}</Suspense>;
 
 function App() {
   return (
@@ -38,51 +37,62 @@ function App() {
       <ThemeProvider>
         <AuthProvider>
           <Routes>
-            <Route path="/" element={<Navigate to="/courses" replace />} />
+            <Route path="/" element={renderRoute(<LandingPage />)} />
+            <Route path="/auth-prompt" element={renderRoute(<AuthPrompt />)} />
             <Route path="/login" element={renderRoute(<Login />)} />
             <Route path="/register" element={renderRoute(<Register />)} />
             
             <Route
               path="/quizzes"
-              element={renderRoute(<QuizList />, true)}
+              element={renderRoute(<QuizList />)}
             />
 
             <Route
               path="/courses"
-              element={renderRoute(<CoursesPage />, true)}
+              element={renderRoute(<CoursesPage />)}
             />
 
             <Route
               path="/courses/:id"
-              element={renderRoute(<CourseDetailPage />, true)}
+              element={renderRoute(<CourseDetailPage />)}
             />
 
             <Route
               path="/quizzes/:id"
-              element={renderRoute(<QuizDetailPage />, true)}
+              element={renderRoute(<QuizDetailPage />)}
             />
 
             <Route
               path="/dev/content"
-              element={renderRoute(<DevContentDashboard />, true)}
+              element={renderRoute(<DevContentDashboard />)}
+            />
+
+            <Route
+              path="/dev/users"
+              element={renderRoute(<DevUsersDashboard />)}
             />
             
             <Route
               path="/quiz/:id/ready"
-              element={renderRoute(<QuizReady />, true)}
+              element={renderRoute(<QuizReady />)}
             />
 
             <Route
               path="/quiz/:id"
-              element={renderRoute(<QuizPage />, true)}
+              element={renderRoute(<QuizPage />)}
             />
             
             <Route
               path="/results/:attemptId"
-              element={renderRoute(<ResultsPage />, true)}
+              element={renderRoute(<ResultsPage />)}
+            />
+
+            <Route
+              path="/insights"
+              element={renderRoute(<InsightsPage />)}
             />
             
-            <Route path="*" element={<Navigate to="/courses" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <SiteFooter />
           <WallpaperToggleButton />

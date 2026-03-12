@@ -27,9 +27,15 @@ const normalizeQuizPayload = (payload) => {
     ? payload.questionIds.map((id) => String(id).trim()).filter(Boolean)
     : [];
 
+  const shortDescription = String(payload?.shortDescription || payload?.description || '').trim();
+  const longDescription = String(
+    payload?.longDescription || payload?.description || payload?.shortDescription || ''
+  ).trim();
+
   return {
     title: String(payload?.title || '').trim(),
-    description: String(payload?.description || '').trim(),
+    shortDescription,
+    longDescription,
     topic: String(payload?.topic || '').trim(),
     difficulty: Number(payload?.difficulty),
     estimatedTime: Number(payload?.estimatedTime),
@@ -43,8 +49,11 @@ const validateQuizPayload = (quiz) => {
   if (!isNonEmptyString(quiz.title)) {
     throw new Error('title is required');
   }
-  if (!isNonEmptyString(quiz.description)) {
-    throw new Error('description is required');
+  if (!isNonEmptyString(quiz.shortDescription)) {
+    throw new Error('shortDescription is required');
+  }
+  if (!isNonEmptyString(quiz.longDescription)) {
+    throw new Error('longDescription is required');
   }
   if (!isNonEmptyString(quiz.topic)) {
     throw new Error('topic is required');

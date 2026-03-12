@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BookOpen, Clock, Play } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import Navbar from '@/components/layout/Navbar.jsx';
@@ -14,19 +14,15 @@ import { getCoursePageById } from '@/api/api.js';
 import { useQuizPage } from '@/hooks/useQuizPage.js';
 import { useStartAttempt } from '@/hooks/useStartAttempt.js';
 import { queryKeys } from '@/hooks/queryKeys.js';
+import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
+import { appendReturnUrl } from '@/utils/returnUrl.js';
 
-const buildQuizDescriptionDetail = (quiz, associatedCourses) => {
-  const baseDescription = String(quiz?.description || '').trim() || 'No quiz description provided.';
-  const courseNames = associatedCourses.map((course) => course.title).join(', ') || 'Unassigned';
-  const parts = [
-    `Topic: ${quiz?.topic || 'General'}.`,
-    `Difficulty: ${quiz?.difficulty || 'intermediate'}.`,
-    `Questions: ${quiz?.questionCount || 0}.`,
-    `Estimated time: ${quiz?.estimatedTime || 0} minutes.`,
-    `Associated courses: ${courseNames}.`,
-  ];
+const buildQuizDescriptionDetail = (quiz) => {
+  const baseDescription =
+    String(quiz?.longDescription || quiz?.shortDescription || quiz?.description || '').trim() ||
+    'No quiz description provided.';
 
-  return `${baseDescription} ${parts.join(' ')}`.trim();
+  return `${baseDescription}`.trim();
 };
 
 const QuizDetailPage = () => {
@@ -40,6 +36,16 @@ const QuizDetailPage = () => {
   const [hasShownLoadError, setHasShownLoadError] = useState(false);
   const { data: quiz, isLoading, isError } = useQuizPage(id);
   const startAttemptMutation = useStartAttempt();
+  const location = useLocation();
+  const returnUrl = useMemo(
+    () => `${location.pathname}${location.search}${location.hash}`,
+    [location.hash, location.pathname, location.search]
+  );
+  const authPromptUrl = useMemo(() => appendReturnUrl('/auth-prompt', returnUrl), [returnUrl]);
+  const guestLimitUrl = useMemo(
+    () => appendReturnUrl('/register?reason=guest-attempt-limit', returnUrl),
+    [returnUrl]
+  );
   const associatedCourses = useMemo(
     () => (Array.isArray(quiz?.associatedCourses) ? quiz.associatedCourses : []),
     [quiz]
@@ -57,10 +63,7 @@ const QuizDetailPage = () => {
     navigate('/quizzes');
   }, [hasShownLoadError, isError, navigate, toast]);
 
-  const descriptionDetail = useMemo(
-    () => buildQuizDescriptionDetail(quiz, associatedCourses),
-    [quiz, associatedCourses]
-  );
+  const descriptionDetail = useMemo(() => buildQuizDescriptionDetail(quiz), [quiz]);
   const questionTypeBreakdown = useMemo(() => {
     const bucket = {};
     (quiz?.questions || []).forEach((question) => {
@@ -71,7 +74,12 @@ const QuizDetailPage = () => {
   }, [quiz]);
 
   const handleStartQuiz = useCallback(async () => {
-    if (!quiz || !user?.id) return;
+    if (!quiz || !user?.id) {
+      if (!user?.id) {
+        navigate(authPromptUrl);
+      }
+      return;
+    }
 
     setIsStarting(true);
     try {
@@ -86,7 +94,17 @@ const QuizDetailPage = () => {
           estimatedTime: quiz.estimatedTime,
         },
       });
-    } catch {
+    } catch (error) {
+      if (error?.code === GUEST_ATTEMPT_LIMIT_REACHED_CODE) {
+        toast({
+          title: 'Free guest limit reached',
+          description: 'Create an account to continue taking quizzes.',
+        });
+        navigate(guestLimitUrl);
+        setIsStarting(false);
+        return;
+      }
+
       toast({
         title: 'Error',
         description: 'Failed to start quiz',
@@ -94,7 +112,7 @@ const QuizDetailPage = () => {
       });
       setIsStarting(false);
     }
-  }, [navigate, quiz, startAttemptMutation, toast, user?.id]);
+  }, [authPromptUrl, guestLimitUrl, navigate, quiz, startAttemptMutation, toast, user?.id]);
 
   const prefetchCourse = useCallback(
     (courseId) => {

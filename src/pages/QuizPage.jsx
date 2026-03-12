@@ -81,7 +81,10 @@ const QuizPage = () => {
     <>
       <Helmet>
         <title>{`${quiz.title} - QuizMaster`}</title>
-        <meta name="description" content={quiz.description} />
+        <meta
+          name="description"
+          content={quiz.shortDescription || quiz.description || quiz.longDescription || ''}
+        />
       </Helmet>
 
       <div className="min-h-screen">
@@ -91,7 +94,9 @@ const QuizPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-12">
           <div className="mb-4 md:mb-8">
             <h1 className="text-3xl font-bold text-slate-900 mb-2 dark:text-white">{quiz.title}</h1>
-            <p className="text-slate-600 dark:text-slate-400 hidden md:block">{quiz.description}</p>
+            <p className="text-slate-600 dark:text-slate-400 hidden md:block">
+              {quiz.shortDescription || quiz.description || quiz.longDescription}
+            </p>
           </div>
 
           <QuizRunner quiz={quiz} attemptId={attemptId} />

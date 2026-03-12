@@ -12,6 +12,8 @@ const QUIZZES = [
   {
     id: 'quiz-1',
     title: 'Data Structures Fundamentals',
+    shortDescription: '',
+    longDescription: 'Master the core concepts of arrays, linked lists, stacks, queues, and hash tables',
     description: 'Master the core concepts of arrays, linked lists, stacks, queues, and hash tables',
     topic: 'Data Structures',
     questionCount: 12,
@@ -21,6 +23,8 @@ const QUIZZES = [
   {
     id: 'quiz-2',
     title: 'Algorithm Analysis & Complexity',
+    shortDescription: '',
+    longDescription: 'Deep dive into Big O notation, time complexity, and algorithm optimization techniques',
     description: 'Deep dive into Big O notation, time complexity, and algorithm optimization techniques',
     topic: 'Algorithms',
     questionCount: 15,
@@ -30,6 +34,8 @@ const QUIZZES = [
   {
     id: 'quiz-3',
     title: 'Database Design Principles',
+    shortDescription: '',
+    longDescription: 'Learn normalization, indexing, query optimization, and relational database design',
     description: 'Learn normalization, indexing, query optimization, and relational database design',
     topic: 'Database Design',
     questionCount: 10,
@@ -39,6 +45,8 @@ const QUIZZES = [
   {
     id: 'quiz-4',
     title: 'Object-Oriented Programming',
+    shortDescription: '',
+    longDescription: 'Explore inheritance, polymorphism, encapsulation, and design patterns',
     description: 'Explore inheritance, polymorphism, encapsulation, and design patterns',
     topic: 'OOP',
     questionCount: 12,

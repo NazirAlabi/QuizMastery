@@ -72,7 +72,9 @@ const QuizCard = ({
             {quiz.difficulty}
           </Badge>
         </div>
-        <CardDescription className="text-sm md:text-base line-clamp-3">{quiz.description}</CardDescription>
+        <CardDescription className="text-sm md:text-base line-clamp-3">
+          {quiz.shortDescription || quiz.description || quiz.longDescription}
+        </CardDescription>
       </CardHeader>
       <CardContent className="mt-auto pt-0 flex flex-col">
         <div className="space-y-3 mb-4 flex-1">

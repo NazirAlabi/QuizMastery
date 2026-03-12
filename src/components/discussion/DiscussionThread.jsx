@@ -41,7 +41,11 @@ const DiscussionThread = ({ questionId }) => {
 
     setIsPosting(true);
     try {
-      const comment = await postComment(questionId, newComment, user.email);
+      const comment = await postComment(
+        questionId,
+        newComment,
+        user?.displayName || user?.email || 'Guest User'
+      );
       setComments(prev => [...prev, comment]);
       setNewComment('');
       toast({

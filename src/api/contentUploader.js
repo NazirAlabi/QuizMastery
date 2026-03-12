@@ -143,7 +143,8 @@ const STARTER_QUESTIONS = {
 const STARTER_QUIZZES = {
   bio_foundations: {
     title: 'Foundations of Biological Sciences',
-    description: 'Starter quiz covering key concepts in biology and genetics.',
+    shortDescription: '',
+    longDescription: 'Starter quiz covering key concepts in biology and genetics.',
     topic: 'Biological Sciences',
     difficulty: 1,
     estimatedTime: 12,
@@ -153,7 +154,8 @@ const STARTER_QUIZZES = {
   },
   biochem_essentials: {
     title: 'Biochemistry Essentials',
-    description: 'Starter quiz on core biochemical principles and pathways.',
+    shortDescription: '',
+    longDescription: 'Starter quiz on core biochemical principles and pathways.',
     topic: 'Biochemistry',
     difficulty: 2,
     estimatedTime: 12,
@@ -167,7 +169,8 @@ const STARTER_COURSES = {
   'Computer Science': {
     courseCode: 'CSC',
     topic: 'Computer Science',
-    description:
+    shortDescription: '',
+    longDescription:
       'Core computer science topics including data structures, databases, and software design principles.',
     quizRefs: ['cs_data_structures', 'math_algorithm_analysis', 'cs_database_design', 'cs_oop'],
     isArchived: false,
@@ -175,7 +178,8 @@ const STARTER_COURSES = {
   Mathematics: {
     courseCode: 'MTH',
     topic: 'Mathematics',
-    description:
+    shortDescription: '',
+    longDescription:
       'Mathematical reasoning and analysis through computational complexity and algorithmic thinking.',
     quizRefs: ['math_algorithm_analysis'],
     isArchived: false,
@@ -183,7 +187,8 @@ const STARTER_COURSES = {
   'Biological Sciences': {
     courseCode: 'BIO',
     topic: 'Biological Sciences',
-    description:
+    shortDescription: '',
+    longDescription:
       'Foundations in molecular biology, genetics, and physiology for life science learners.',
     quizRefs: ['bio_foundations'],
     isArchived: false,
@@ -191,7 +196,8 @@ const STARTER_COURSES = {
   Biochemistry: {
     courseCode: 'BCH',
     topic: 'Biochemistry',
-    description:
+    shortDescription: '',
+    longDescription:
       'Introductory biochemical concepts spanning biomolecules, metabolism, and enzyme function.',
     quizRefs: ['biochem_essentials'],
     isArchived: false,
@@ -226,7 +232,10 @@ const normalizeMockQuestion = (question) => ({
 
 const normalizeMockQuiz = (quiz, questionRefs) => ({
   title: String(quiz?.title || '').trim(),
-  description: String(quiz?.description || '').trim(),
+  shortDescription: String(quiz?.shortDescription || '').trim(),
+  longDescription: String(
+    quiz?.longDescription || quiz?.description || ''
+  ).trim(),
   topic: String(quiz?.topic || 'General').trim(),
   difficulty: QUIZ_DIFFICULTY_MAP[String(quiz?.difficulty || '').toLowerCase()] || 2,
   estimatedTime: Number(quiz?.estimatedTime) > 0 ? Number(quiz.estimatedTime) : 15,
@@ -374,7 +383,8 @@ export const uploadStarterCourses = async ({
       const quiz = await ensureQuiz(
         {
           title: quizConfig.title,
-          description: quizConfig.description,
+          shortDescription: quizConfig.shortDescription,
+          longDescription: quizConfig.longDescription,
           topic: quizConfig.topic,
           difficulty: Number(quizConfig.difficulty) || 2,
           estimatedTime: Number(quizConfig.estimatedTime) || 10,
@@ -395,7 +405,8 @@ export const uploadStarterCourses = async ({
     const course = await ensureCourse(
       {
         title: courseTitle,
-        description: courseConfig.description,
+        shortDescription: courseConfig.shortDescription,
+        longDescription: courseConfig.longDescription,
         topic: courseConfig.topic,
         courseCode: courseConfig.courseCode,
         quizIds,

@@ -1,0 +1,7 @@
+{
+  "displayName": "String", // Required for all users
+  "email": "String | null", // null = guest, string = registered
+  "createdAt": "FieldValue.serverTimestamp()", // Server-side creation timestamp
+  "lastActiveAt": "FieldValue.serverTimestamp()", // Optional: server-side last activity timestamp
+  "isGuest" : "bool" //true if guest, false if registered
+}

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth.js';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
@@ -8,7 +9,7 @@ const FOOTER_CONTENT_KEY = 'quizmaster_footer_content_v1';
 const DEFAULT_FOOTER_CONTENT = {
   title: 'QuizMaster',
   subtitle: 'Build mastery one quiz at a time.',
-  note: `© ${new Date().getFullYear()} QuizMaster. All rights reserved.`,
+  note: `(c) ${new Date().getFullYear()} QuizMaster. All rights reserved.`,
 };
 
 const readFooterContent = () => {
@@ -67,7 +68,12 @@ const SiteFooter = () => {
     <footer className="border-t border-slate-300 bg-slate-100/50 backdrop-blur-xl mt-12 dark:border-slate-800/50 dark:bg-slate-950">
       <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:flex md:items-center md:justify-center">
         <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{content.title}</h2>
+          <Link
+            to="/"
+            className="inline-block text-lg font-semibold text-slate-900 hover:text-indigo-700 dark:text-slate-100 dark:hover:text-indigo-300"
+          >
+            {content.title}
+          </Link>
           <p className="text-sm text-slate-600 dark:text-slate-400">{content.subtitle}</p>
           <p className="text-xs text-slate-500 dark:text-slate-500">{content.note}</p>
         </div>
@@ -108,3 +114,4 @@ const SiteFooter = () => {
 };
 
 export default SiteFooter;
+

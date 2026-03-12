@@ -146,7 +146,9 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId);
+      allow delete: if isSignedIn();
     }
 
     match /questions/{questionId} {
@@ -181,13 +183,15 @@ service cloud.firestore {
     }
 
     match /userAttempts/{attemptId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn();
       match /answers/{answerId} {
-        allow read: if isAttemptOwner(attemptId);
+        allow read: if isSignedIn();
         allow create: if isAttemptOwner(attemptId) && request.resource.data.userId == request.auth.uid;
         allow update: if isAttemptOwner(attemptId) && resource.data.userId == request.auth.uid;
+        allow delete: if isSignedIn();
       }
     }
   }

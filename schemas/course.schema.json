@@ -1,6 +1,7 @@
 {
   "title": "Data Structures 101", // Course name shown to learners/admins
-  "description": "An introductory course covering arrays, linked lists, stacks, queues, and hash tables", // Course overview text
+  "shortDescription": "An introductory course covering arrays, linked lists, stacks, queues, and hash tables", // Course overview text
+  "longDescription": "This course covers the core concepts of arrays, linked lists, stacks, queues, and hash tables. It is a great introduction to data structures and algorithms.", // Detailed course description
   "courseCode": "CS101", // Optional unique short code for filtering/search
   "topic": "Data Structures", // Course domain/category
   "quizIds": ["quiz1", "quiz2", "quiz3"], // Referenced quiz document IDs included in this course
