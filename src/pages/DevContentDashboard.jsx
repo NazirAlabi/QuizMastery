@@ -112,6 +112,127 @@ for long answer
 "metadata": {}
 `;
 
+const QUIZ_GENERATION_PROMPT_TEMPLATE = `Generate a quiz question set based on the following quiz description:
+
+[INSERT QUIZ DESCRIPTION HERE]
+
+Your task is to produce a valid JSON object that includes a title, a thoughtful estimate of the time required to complete the quiz (in minutes), and the array of questions. Follow this two‑step process internally:
+
+1. **Design the quiz questions** – Carefully create the question set according to all requirements below (coverage, types, LaTeX, difficulty, skill category, explanations, etc.). Ensure the questions collectively address every focus topic listed in the description.
+2. **Estimate the time** – After the questions are designed, think about the time a typical learner would need to answer them. Provide an estimate on the **lower end** (i.e., a reasonably quick but attentive pace). Base this on the number of questions, their types (MCQ, numeric, short answer), and their difficulty/complexity. For example, simple recall MCQs might take 30 seconds each, while a multi‑step calculation could take 2 minutes. Use your judgment; do not simply apply a formula. (A fallback guideline of 1 minute per 2 questions is only a server‑side default – your reasoned estimate is preferred.)
+
+Finally, output **only** the JSON object with this structure:
+
+
+{
+  "title": "string (concise title derived from the description; use the 'Topic:' line if present, otherwise create a short descriptive title)",
+  "estimatedTime": integer,  // your reasoned estimate in whole minutes (ceil to nearest minute)
+  "questions": [
+    {
+      "type": "mcq" | "short_answer" | "numeric",
+      "question_text": "The question text",
+      "metadata": {},  // See format specifications below
+      "difficulty": 1-3,
+      "topic": "concise topic identifier (max 3 words)",
+      "skillCategory": 1 | 2 | 3,
+      "explanation": "Brief explanation of the correct answer"
+    }
+  ]
+}
+METADATA FORMATS
+For MCQ:
+
+{
+  "options": [
+    { "id": "A", "text": "option text" },
+    { "id": "B", "text": "option text" },
+    { "id": "C", "text": "option text" },
+    { "id": "D", "text": "option text" }
+  ],
+  "correct_answer": "A"  // The ID of the correct option
+}
+For Short Answer:
+
+{
+  "accepted_answers": ["answer1", "alternate phrasing", "another acceptable answer"],
+  "case_sensitive": false,
+  "ignore_whitespace": true
+}
+For Numeric:
+
+{
+  "numeric_answer": 123.45,  // The correct numeric value
+  "tolerance": 0.01  // Acceptable margin of error
+}
+LATEX SUPPORT
+The platform fully supports LaTeX math rendering. Use $...$ for inline math and $$...$$ for display math wherever appropriate. This is especially important for questions involving chemical formulas, equations, mathematical expressions, or any scientific notation. For example, you might write "The reaction $C_6H_{12}O_6 + 6O_2 \\rightarrow 6CO_2 + 6H_2O$ represents..." or "Calculate $\\int_0^1 x^2 dx$." Ensure all LaTeX is correctly escaped for JSON (e.g., use double backslashes for LaTeX commands like \\\\rightarrow).
+
+QUESTION REQUIREMENTS
+COVERAGE: The question set must collectively address ALL focus topics listed in the quiz description. Distribute questions across topics as you see fit based on relevance and the natural need for assessment.
+
+QUESTION TYPES:
+
+PRIMARY: Multiple choice questions (MCQ) and numeric questions
+
+SECONDARY: Short answer questions (use sparingly, only when the expected answer is robust and limited to 1‑2 words/phrases)
+
+AVOID: Long answer questions (do not include any)
+
+The quiz may consist entirely of MCQ and numeric questions if suitable short answer questions cannot be generated.
+
+TOPIC FIELD: Create a concise identifier (1‑3 words maximum) that semantically maps to one of the focus topics. For example, if the focus topic is "Definition and four functions of metabolism", appropriate topic fields could be: "Metabolism definition", "Functions of metabolism", or simply "Metabolism functions". The identifier does not need to use exact words from the focus topic but must clearly relate to it.
+
+DIFFICULTY (1‑3): Assign relative difficulty based on:
+
+Level 1: Basic recall, definitional questions, straightforward calculations
+
+Level 2: Conceptual understanding, multi‑step reasoning, application of principles
+
+Level 3: Complex synthesis, analysis, integration of multiple concepts, challenging problem‑solving
+
+SKILL CATEGORY:
+
+1 (Recall): Direct fact recall, definitions, identifying terms
+
+2 (Conceptual): Understanding relationships, explaining processes, comparing/contrasting
+
+3 (Application): Applying knowledge to new situations, problem‑solving, experimental design
+
+EXPLANATION: Provide a brief, clear explanation of why the answer is correct. For incorrect MCQ options, you may optionally include brief explanations of why they are wrong, but the primary explanation should focus on the correct answer.
+
+ORDER: Questions should be arranged in random order by topic. If possible, order generally by increasing difficulty, but this is not strictly required.
+
+COUNT: Generate exactly [estimated_questions] questions as specified in the quiz description.
+
+VALIDATION CHECKLIST (for your internal use)
+JSON is valid and properly formatted
+
+Correct number of questions generated
+
+All focus topics are covered at least once
+
+No long answer questions included
+
+Short answer questions used minimally
+
+All MCQ options are plausible (not obviously incorrect)
+
+Numeric answers include appropriate tolerance
+
+Difficulty ratings are consistent across questions
+
+Skill categories align with question nature
+
+Topic fields semantically map to focus topics
+
+Explanations are helpful and accurate
+
+LaTeX is used where appropriate and properly escaped
+
+Title is descriptive and derived from the description
+
+estimatedTime is a reasoned estimate (not a mechanical calculation) and is a whole number of minutes`;
+
 const BULK_UPLOAD_TEMPLATE = '{\n  "questions": []\n}';
 
 const BULK_DEFAULTS = {
@@ -231,6 +352,8 @@ const DevContentDashboard = () => {
   const [quizLinkedCourseIds, setQuizLinkedCourseIds] = useState([]);
   const [bulkLinkedCourseIds, setBulkLinkedCourseIds] = useState([]);
   const [bulkUploadMode, setBulkUploadMode] = useState('manual');
+  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+  const [promptInput, setPromptInput] = useState('');
   const [dedupeProgress, setDedupeProgress] = useState(0);
   const [dedupeStatus, setDedupeStatus] = useState(DEDUPE_IDLE_MESSAGE);
   const [dedupeLogs, setDedupeLogs] = useState([DEDUPE_IDLE_MESSAGE]);
@@ -863,7 +986,8 @@ const DevContentDashboard = () => {
   const handlePasteJson = async (setter) => {
     try {
       const text = await navigator.clipboard.readText();
-      setter((previous) => ({ ...previous, uploadText: text }));
+      const newText = String(text || '');
+      setter((previous) => ({ ...previous, uploadText: newText }));
       toast({
         title: 'Pasted successfully',
         description: 'Text pasted from clipboard.',
@@ -880,7 +1004,8 @@ const DevContentDashboard = () => {
   const handlePasteMetadataJson = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      setQuestionForm((v) => ({ ...v, metadataJson: text }));
+      const newText = String(text || '');
+      setQuestionForm((v) => ({ ...v, metadataJson: newText }));
       toast({
         title: 'Pasted successfully',
         description: 'Metadata pasted from clipboard.',
@@ -889,6 +1014,43 @@ const DevContentDashboard = () => {
       toast({
         title: 'Paste failed',
         description: 'Could not read from clipboard. Please paste manually.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handlePastePromptInput = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setPromptInput(String(text || ''));
+      toast({
+        title: 'Pasted successfully',
+        description: 'Description pasted from clipboard.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Paste failed',
+        description: 'Could not read from clipboard. Please paste manually.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCopyGeneratedPrompt = async () => {
+    const generatedPrompt = QUIZ_GENERATION_PROMPT_TEMPLATE.replace(
+      '[INSERT QUIZ DESCRIPTION HERE]',
+      promptInput || '[INSERT QUIZ DESCRIPTION HERE]'
+    );
+    try {
+      await navigator.clipboard.writeText(generatedPrompt);
+      toast({
+        title: 'Prompt Copied!',
+        description: 'The generated prompt has been copied to your clipboard.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Copy failed',
+        description: 'Could not write to clipboard.',
         variant: 'destructive',
       });
     }
@@ -2109,7 +2271,48 @@ Return only the description text.`;
                         )}
                       </div>
 
-                      {(!bulkForm.selectedQuizId && bulkUploadMode === 'json') ? null : (
+                      {(!bulkForm.selectedQuizId && bulkUploadMode === 'json') ? (
+                        <div className="md:col-span-2">
+                           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-slate-800 dark:bg-slate-900">
+                              <button
+                                type="button"
+                                onClick={() => setIsPromptExpanded(!isPromptExpanded)}
+                                className="w-full flex items-center justify-between p-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                              >
+                                <div>
+                                   <div className="font-medium text-slate-900 dark:text-white text-sm">Generate AI Prompt</div>
+                                   <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Create a prompt to generate the quiz JSON</div>
+                                </div>
+                                <div className="text-slate-400">
+                                   <ChevronDown className={`h-5 w-5 transition-transform ${isPromptExpanded ? 'rotate-180' : ''}`} />
+                                </div>
+                              </button>
+                              
+                              {isPromptExpanded && (
+                                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-3">
+                                   <div className="flex items-center justify-between">
+                                      <Label className="text-xs">Quiz Description / Source Text</Label>
+                                      <Button type="button" variant="outline" size="sm" onClick={handlePastePromptInput} className="h-6 px-2 text-xs">
+                                        <Copy className="h-3 w-3 mr-1" /> Paste Content
+                                      </Button>
+                                   </div>
+                                   <textarea
+                                     className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm min-h-[120px] dark:border-slate-700 dark:bg-slate-950 resize-y"
+                                     placeholder="e.g. Generate 5 questions about React Hooks..."
+                                     value={promptInput}
+                                     onChange={(e) => setPromptInput(e.target.value)}
+                                   />
+                                   <div className="flex justify-end mt-2">
+                                      <Button type="button" onClick={handleCopyGeneratedPrompt} size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600">
+                                         <Copy className="h-4 w-4 mr-1.5" />
+                                         Copy Full Prompt
+                                      </Button>
+                                   </div>
+                                </div>
+                              )}
+                           </div>
+                        </div>
+                      ) : (
                         <>
                           <div>
                             <Label>Quiz title</Label>
