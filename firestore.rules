@@ -40,7 +40,6 @@ service cloud.firestore {
         data.metadata is map &&
         data.difficulty in [1, 2, 3] &&
         data.topic is string &&
-        data.topic.size() > 0 &&
         data.skillCategory in [1, 2, 3] &&
         data.isArchived is bool &&
         data.createdAt is timestamp &&
@@ -101,7 +100,6 @@ service cloud.firestore {
         data.shortDescription is string &&
         data.longDescription is string &&
         data.topic is string &&
-        data.topic.size() > 0 &&
         data.difficulty in [1, 2, 3] &&
         isNumeric(data.estimatedTime) &&
         data.estimatedTime > 0 &&
@@ -137,7 +135,6 @@ service cloud.firestore {
         data.longDescription is string &&
         (!('courseCode' in data) || (data.courseCode is string && data.courseCode.size() > 0)) &&
         data.topic is string &&
-        data.topic.size() > 0 &&
         data.quizIds is list &&
         data.quizCount is int &&
         data.quizCount >= 0 &&

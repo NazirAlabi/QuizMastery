@@ -1,5 +1,5 @@
 {
     "title" : "Title of the quiz",
-    "estimatedTime" : integer,//optional(default to 1 min per 2 questions and make is per question default to true)
+    "estimatedTime" : integer,//optional
     "questions" : [] //according to question upload schema
 }

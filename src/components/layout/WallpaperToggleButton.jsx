@@ -10,17 +10,17 @@ const WallpaperToggleButton = () => {
     : 'Switch back to zig-zag wallpaper';
 
   return (
-    <div className="fixed bottom-3 right-3 z-50 group">
+    <div className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-50 group">
       <button
         type="button"
         onClick={toggleWallpaper}
         aria-label={tooltip}
         title={tooltip}
-        className="h-8 w-8 rounded-full border border-slate-300/80 bg-slate-100/70 text-slate-700 shadow-md backdrop-blur-sm transition hover:bg-slate-200/80 dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800/80"
+        className="h-10 w-10 md:h-8 md:w-8 rounded-full border border-slate-300/80 bg-slate-100/70 text-slate-700 shadow-md backdrop-blur-sm transition hover:bg-slate-200/80 dark:border-slate-700/80 dark:bg-slate-900/60 dark:text-slate-200 dark:hover:bg-slate-800/80 flex items-center justify-center"
       >
-        <Images className="h-4 w-4 mx-auto" />
+        <Images className="h-4 w-4 md:h-4 md:w-4" />
       </button>
-      <span className="pointer-events-none absolute bottom-10 right-0 whitespace-nowrap rounded-md border border-slate-300/90 bg-slate-100/90 px-2 py-1 text-xs text-slate-700 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 dark:border-slate-700/90 dark:bg-slate-900/85 dark:text-slate-200">
+      <span className="pointer-events-none absolute bottom-12 md:bottom-10 right-0 whitespace-nowrap rounded-md border border-slate-300/90 bg-slate-100/90 px-2 py-1 text-xs text-slate-700 shadow-sm opacity-0 transition-opacity group-hover:opacity-100 dark:border-slate-700/90 dark:bg-slate-900/85 dark:text-slate-200">
         {tooltip}
       </span>
     </div>

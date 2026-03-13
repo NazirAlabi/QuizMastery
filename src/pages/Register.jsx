@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { GraduationCap } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { appendReturnUrl, resolveReturnUrl } from '@/utils/returnUrl.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -68,16 +69,6 @@ const Register = () => {
       });
       navigate(returnUrl, { replace: true });
     } else {
-      toast({
-        title: 'Registration Failed',
-        description: result.error || 'Could not create account',
-        variant: 'destructive'
-      });
-    }
-
-    setIsLoading(false);
-  };
-
   return (
     <>
       <Helmet>

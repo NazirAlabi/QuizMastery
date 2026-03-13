@@ -9,12 +9,14 @@ import { Button } from '@/components/ui/button.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useQuiz } from '@/hooks/useQuiz.js';
 import { useConfigureAttempt } from '@/hooks/useConfigureAttempt.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const SPEED_OPTIONS = [
   { label: '0.5x', value: 0.5 },
+  { label: '0.75x', value: 0.75 },
   { label: '1x', value: 1 },
+  { label: '1.25x', value: 1.25 },
   { label: '1.5x', value: 1.5 },
-  { label: '2x', value: 2 },
 ];
 
 const formatDuration = (seconds) => {
@@ -115,7 +117,7 @@ const QuizReady = () => {
         onError: (error) => {
           toast({
             title: 'Warning',
-            description: error?.message || 'Attempt setup was slow. Applying defaults.',
+            description: getUserFriendlyErrorMessage(error, 'Attempt setup was slow. Applying defaults.'),
             variant: 'destructive',
           });
         },

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@ta
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import App from '@/App';
 import { toast } from '@/components/ui/use-toast.jsx';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 import '@/index.css';
 
 const isOfflineError = (error) => {
@@ -32,6 +33,12 @@ const handleGlobalError = (error) => {
 		toast({
 			title: 'Connection Error',
 			description: 'Please check your internet connection.',
+			variant: 'destructive',
+		});
+	} else {
+		toast({
+			title: 'Error',
+			description: getUserFriendlyErrorMessage(error),
 			variant: 'destructive',
 		});
 	}

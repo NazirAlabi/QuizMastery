@@ -16,6 +16,7 @@ import { useStartAttempt } from '@/hooks/useStartAttempt.js';
 import { queryKeys } from '@/hooks/queryKeys.js';
 import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
 import { appendReturnUrl } from '@/utils/returnUrl.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const buildQuizDescriptionDetail = (quiz) => {
   const baseDescription =
@@ -57,7 +58,7 @@ const QuizDetailPage = () => {
     setHasShownLoadError(true);
     toast({
       title: 'Error',
-      description: 'Failed to load quiz page.',
+      description: getUserFriendlyErrorMessage(null, 'Failed to load quiz page.'),
       variant: 'destructive',
     });
     navigate('/quizzes');
@@ -107,7 +108,7 @@ const QuizDetailPage = () => {
 
       toast({
         title: 'Error',
-        description: 'Failed to start quiz',
+        description: getUserFriendlyErrorMessage(error, 'Failed to start quiz'),
         variant: 'destructive',
       });
       setIsStarting(false);

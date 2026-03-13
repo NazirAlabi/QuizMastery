@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
 import { useResults } from '@/hooks/useResults.js';
 import { useProgressInsights } from '@/hooks/useProgressInsights.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const DiscussionThread = lazy(() => import('@/components/discussion/DiscussionThread.jsx'));
 
@@ -25,21 +26,6 @@ const ResultsPage = () => {
   const { isDevFeaturesEnabled } = useAuth();
   const { data: results, isLoading, isError } = useResults(attemptId);
   const { data: progressInsights, isLoading: isProgressInsightsLoading } = useProgressInsights();
-
-  useEffect(() => {
-    if (!isError || hasShownLoadError) return;
-
-    setHasShownLoadError(true);
-    toast({
-      title: 'Error',
-      description: 'Failed to load results',
-      variant: 'destructive',
-    });
-    navigate('/quizzes');
-  }, [hasShownLoadError, isError, navigate, toast]);
-
-  const handleReviewAnswers = useCallback(() => {
-    setActiveTab('review');
     window.scrollTo(0, 0);
   }, []);
 

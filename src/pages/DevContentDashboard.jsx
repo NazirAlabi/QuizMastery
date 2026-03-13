@@ -29,8 +29,8 @@ import {
   updateAdminQuiz,
 } from '@/api/api.js';
 import { measureAsync } from '@/utils/performance.js';
-import { callGemini } from '@/ai/geminiClient';
 import { useQueryClient } from '@tanstack/react-query';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 const COURSE_DEFAULTS = {
   title: '',
   shortDescription: '',
@@ -112,17 +112,66 @@ for long answer
 "metadata": {}
 `;
 
+const AQUS_SCHEMA_TEXT = `{
+    "title" : "Title of the quiz",
+    "estimatedTime" : integer,
+    "questions" : {"questions": [
+  {
+    "type": "mcq",
+    "question_text": "What is the time complexity of binary search?",
+    "metadata": {
+      "options": [
+        { "id": "A", "text": "O(n)" },
+        { "id": "B", "text": "O(log n)" },
+        { "id": "C", "text": "O(n log n)" },
+        { "id": "D", "text": "O(1)" }
+      ],
+      "correct_answer": "B"
+    },
+    "difficulty": 1,
+    "topic": "Algorithms",
+    "skillCategory": 2,
+    "explanation": "Binary search halves the search space each iteration."
+  }
+]}
+
+for mcq
+"type": "mcq",
+"metadata": {
+  "options": [{ "id": "A", "text": "..." }],
+  "correct_answer": "A"
+}
+
+for short answer
+"type": "short_answer",
+"metadata": {
+  "accepted_answers": ["stack", "a stack"],
+  "case_sensitive": false,
+  "ignore_whitespace": true
+}
+
+for numeric
+"type": "numeric",
+"metadata": {
+  "numeric_answer": 3.14,
+  "tolerance": 0.01
+}
+
+for long answer
+"type": "long_answer",
+"metadata": {}`;
+
 const QUIZ_GENERATION_PROMPT_TEMPLATE = `Generate a quiz question set based on the following quiz description:
 
 [INSERT QUIZ DESCRIPTION HERE]
 
 Your task is to produce a valid JSON object that includes a title, a thoughtful estimate of the time required to complete the quiz (in minutes), and the array of questions. Follow this two‑step process internally:
 
-1. **Design the quiz questions** – Carefully create the question set according to all requirements below (coverage, types, LaTeX, difficulty, skill category, explanations, etc.). Ensure the questions collectively address every focus topic listed in the description.
-2. **Estimate the time** – After the questions are designed, think about the time a typical learner would need to answer them. Provide an estimate on the **lower end** (i.e., a reasonably quick but attentive pace). Base this on the number of questions, their types (MCQ, numeric, short answer), and their difficulty/complexity. For example, simple recall MCQs might take 30 seconds each, while a multi‑step calculation could take 2 minutes. Use your judgment; do not simply apply a formula. (A fallback guideline of 1 minute per 2 questions is only a server‑side default – your reasoned estimate is preferred.)
+Design the quiz questions – Carefully create the question set according to all requirements below (coverage, types, LaTeX, difficulty, skill category, explanations, etc.). Ensure the questions collectively address every focus topic listed in the description.
 
-Finally, output **only** the JSON object with this structure:
+Estimate the time – After the questions are designed, think about the time a typical learner would need to answer them. Provide an estimate on the lower end (i.e., a reasonably quick but attentive pace). Base this on the number of questions, their types (MCQ, numeric, short answer), and their difficulty/complexity. For example, simple recall MCQs might take 30 seconds each, while a multi‑step calculation could take 2 minutes. Use your judgment; do not simply apply a formula. (A fallback guideline of 1 minute per 2 questions is only a server‑side default – your reasoned estimate is preferred.)
 
+Finally, output only the JSON object with this structure:
 
 {
   "title": "string (concise title derived from the description; use the 'Topic:' line if present, otherwise create a short descriptive title)",
@@ -164,8 +213,28 @@ For Numeric:
   "numeric_answer": 123.45,  // The correct numeric value
   "tolerance": 0.01  // Acceptable margin of error
 }
-LATEX SUPPORT
-The platform fully supports LaTeX math rendering. Use $...$ for inline math and $$...$$ for display math wherever appropriate. This is especially important for questions involving chemical formulas, equations, mathematical expressions, or any scientific notation. For example, you might write "The reaction $C_6H_{12}O_6 + 6O_2 \\rightarrow 6CO_2 + 6H_2O$ represents..." or "Calculate $\\int_0^1 x^2 dx$." Ensure all LaTeX is correctly escaped for JSON (e.g., use double backslashes for LaTeX commands like \\\\rightarrow).
+LATEX SUPPORT – CRITICAL: ESCAPE BACKSLASHES
+The platform fully supports LaTeX math rendering. Use $...$ for inline math and $$...$$ for display math wherever appropriate. This is especially important for questions involving chemical formulas, equations, mathematical expressions, or any scientific notation.
+
+⚠️ IMPORTANT JSON REQUIREMENT: In JSON, the backslash (\) is an escape character. To include a literal backslash in a string (as needed for LaTeX commands), you must write two backslashes (\\) for every single backslash that should appear in the final LaTeX.
+
+For example:
+
+\Delta must be written as \\Delta
+
+\int → \\int
+
+\sum → \\sum
+
+\rightarrow → \\rightarrow
+
+\frac{1}{2} → \\frac{1}{2}
+
+\ln → \\ln
+
+\log → \\log
+
+Failure to double the backslashes will result in an "invalid escape character" error and the JSON will be rejected. Always verify that every LaTeX command in your JSON strings uses double backslashes.
 
 QUESTION REQUIREMENTS
 COVERAGE: The question set must collectively address ALL focus topics listed in the quiz description. Distribute questions across topics as you see fit based on relevance and the natural need for assessment.
@@ -205,7 +274,9 @@ ORDER: Questions should be arranged in random order by topic. If possible, order
 COUNT: Generate exactly [estimated_questions] questions as specified in the quiz description.
 
 VALIDATION CHECKLIST (for your internal use)
-JSON is valid and properly formatted
+JSON is valid and properly formatted (no trailing commas, all strings properly quoted)
+
+All backslashes in LaTeX are doubled (e.g., \\Delta, \\int, \\sum, \\rightarrow, \\frac)
 
 Correct number of questions generated
 
@@ -227,7 +298,7 @@ Topic fields semantically map to focus topics
 
 Explanations are helpful and accurate
 
-LaTeX is used where appropriate and properly escaped
+LaTeX is used where appropriate
 
 Title is descriptive and derived from the description
 
@@ -462,7 +533,7 @@ const DevContentDashboard = () => {
     } catch (error) {
       toast({
         title: 'Failed to load content',
-        description: error.message || 'Could not fetch dashboard data.',
+        description: getUserFriendlyErrorMessage(error, 'Could not fetch dashboard data.'),
         variant: 'destructive',
       });
     } finally {
@@ -595,7 +666,7 @@ const DevContentDashboard = () => {
     } catch (error) {
       toast({
         title: 'Action failed',
-        description: error.message || 'Please check your input and try again.',
+        description: getUserFriendlyErrorMessage(error, 'Please check your input and try again.'),
         variant: 'destructive',
       });
     } finally {
@@ -1125,7 +1196,30 @@ const DevContentDashboard = () => {
         successTitle: bulkForm.selectedQuizId ? 'Bulk quiz edits applied' : 'Bulk quiz created',
       },
       async () => {
-        const uploadPayload = JSON.parse(bulkForm.uploadText);
+        const parseResilientJSON = (jsonString) => {
+          try {
+            return JSON.parse(jsonString);
+          } catch (error) {
+            if (error instanceof SyntaxError) {
+              try {
+                const fixedString = jsonString.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
+                const parsed = JSON.parse(fixedString);
+                toast({
+                  title: 'JSON Auto-fixed',
+                  description: 'Invalid escape characters (like unescaped LaTeX backslashes) were found and automatically corrected. Proceeding...',
+                });
+                return parsed;
+              } catch (innerError) {
+                // If the fix didn't work, throw the original error
+                throw error;
+              }
+            }
+            throw error;
+          }
+        };
+
+        const uploadPayload = parseResilientJSON(bulkForm.uploadText);
+        const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
         
         let finalQuizPayload = {
           title: bulkForm.title,
@@ -1140,20 +1234,40 @@ const DevContentDashboard = () => {
         };
 
         if (!bulkForm.selectedQuizId && bulkUploadMode === 'json') {
+           const numQuestions = uploadedQuestions.length;
+           
+           let calcDifficulty = 2;
+           const difficulties = uploadedQuestions.map(q => Number(q.difficulty)).filter(Number.isFinite);
+           if (difficulties.length > 0) {
+             const avg = difficulties.reduce((sum, val) => sum + val, 0) / difficulties.length;
+             calcDifficulty = Math.max(1, Math.min(3, Math.round(avg)));
+           }
+
+           const finalDifficulty = ('difficulty' in uploadPayload && uploadPayload.difficulty !== "")
+             ? Number(uploadPayload.difficulty)
+             : calcDifficulty;
+             
+           const calcEstimatedTime = Math.max(1, Math.ceil(numQuestions / 2));
+           const finalEstimatedTime = ('estimatedTime' in uploadPayload && uploadPayload.estimatedTime !== "")
+             ? Number(uploadPayload.estimatedTime)
+             : calcEstimatedTime;
+             
+           const finalIsTimePerQuestion = ('timeIsPerQuestion' in uploadPayload)
+             ? Boolean(uploadPayload.timeIsPerQuestion)
+             : ('estimatedTime' in uploadPayload ? false : true);
+
            finalQuizPayload = {
               title: uploadPayload.title || '',
               shortDescription: uploadPayload.shortDescription || '',
               longDescription: uploadPayload.longDescription || '',
               topic: uploadPayload.topic || '',
-              difficulty: Number(uploadPayload.difficulty) || 2,
-              estimatedTime: Number(uploadPayload.estimatedTime) || 15,
-              isTimePerQuestion: Boolean(uploadPayload.timeIsPerQuestion),
+              difficulty: finalDifficulty,
+              estimatedTime: finalEstimatedTime,
+              isTimePerQuestion: finalIsTimePerQuestion,
               questionIds: [],
               isArchived: false,
            };
         }
-
-        const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
 
         if (!bulkForm.selectedQuizId) {
           const createdQuizResult = await createQuizFromQuestionUpload({
@@ -1216,7 +1330,28 @@ const DevContentDashboard = () => {
         successTitle: 'Questions created from upload',
       },
       async () => {
-        const uploadPayload = JSON.parse(bulkQuestionForm.uploadText);
+        const parseResilientJSON = (jsonString) => {
+          try {
+            return JSON.parse(jsonString);
+          } catch (error) {
+            if (error instanceof SyntaxError) {
+              try {
+                const fixedString = jsonString.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
+                const parsed = JSON.parse(fixedString);
+                toast({
+                  title: 'JSON Auto-fixed',
+                  description: 'Invalid escape characters (like unescaped LaTeX backslashes) were found and automatically corrected. Proceeding...',
+                });
+                return parsed;
+              } catch (innerError) {
+                throw error;
+              }
+            }
+            throw error;
+          }
+        };
+
+        const uploadPayload = parseResilientJSON(bulkQuestionForm.uploadText);
         const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
 
         for (const questionPayload of uploadedQuestions) {
@@ -1285,7 +1420,12 @@ Return only the description text.`;
       setQuizForm((previous) => ({ ...previous, shortDescription: generatedText }));
     } catch (error) {
       console.error(error);
-      alert('AI generation failed');
+      const friendlyError = getUserFriendlyErrorMessage(error, 'AI generation failed');
+      toast({
+        title: 'AI Generation Failed',
+        description: friendlyError,
+        variant: 'destructive',
+      });
     } finally {
       setAiStatus((previous) => ({ ...previous, quizShort: false }));
     }
@@ -1324,7 +1464,12 @@ Return only the description text.`;
       setQuizForm((previous) => ({ ...previous, longDescription: generatedText }));
     } catch (error) {
       console.error(error);
-      alert('AI generation failed');
+      const friendlyError = getUserFriendlyErrorMessage(error, 'AI generation failed');
+      toast({
+        title: 'AI Generation Failed',
+        description: friendlyError,
+        variant: 'destructive',
+      });
     } finally {
       setAiStatus((previous) => ({ ...previous, quizLong: false }));
     }
@@ -1361,7 +1506,12 @@ Return only the description text.`;
       setCourseForm((previous) => ({ ...previous, shortDescription: generatedText }));
     } catch (error) {
       console.error(error);
-      alert('AI generation failed');
+      const friendlyError = getUserFriendlyErrorMessage(error, 'AI generation failed');
+      toast({
+        title: 'AI Generation Failed',
+        description: friendlyError,
+        variant: 'destructive',
+      });
     } finally {
       setAiStatus((previous) => ({ ...previous, courseShort: false }));
     }
@@ -1398,7 +1548,12 @@ Return only the description text.`;
       setCourseForm((previous) => ({ ...previous, longDescription: generatedText }));
     } catch (error) {
       console.error(error);
-      alert('AI generation failed');
+      const friendlyError = getUserFriendlyErrorMessage(error, 'AI generation failed');
+      toast({
+        title: 'AI Generation Failed',
+        description: friendlyError,
+        variant: 'destructive',
+      });
     } finally {
       setAiStatus((previous) => ({ ...previous, courseLong: false }));
     }
@@ -1449,6 +1604,22 @@ Return only the description text.`;
       toast({
         title: 'Schema copied',
         description: 'The JSON schema template has been copied to your clipboard.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Copy failed',
+        description: 'Could not copy the schema to clipboard.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCopyAqusSchema = async () => {
+    try {
+      await navigator.clipboard.writeText(AQUS_SCHEMA_TEXT);
+      toast({
+        title: 'Schema copied',
+        description: 'The AQUS JSON schema template has been copied to your clipboard.',
       });
     } catch (error) {
       toast({
@@ -2483,17 +2654,35 @@ Return only the description text.`;
                     {schema && ( 
                       <CardContent className="max-h-96 overflow-auto scrollbar-thin scrollbar-thumb-amber-200 dark:scrollbar-thumb-amber-800">
                         <div className="text-sm text-slate-600 dark:text-slate-400">
-                          <pre>
+                          {(!bulkForm.selectedQuizId && bulkUploadMode === 'json') ? (
+                            <>
+                              <pre>
+{AQUS_SCHEMA_TEXT}
+                              </pre>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={handleCopyAqusSchema} 
+                                className="mt-4 border-amber-300 text-amber-900 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                              >
+                                <Copy className="mr-2 h-4 w-4" /> Copy Schema
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <pre>
 {EXPECTED_SCHEMA_TEXT}
-                          </pre>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={handleCopySchema} 
-                            className="mt-4 border-amber-300 text-amber-900 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
-                          >
-                            <Copy className="mr-2 h-4 w-4" /> Copy Schema
-                          </Button>
+                              </pre>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={handleCopySchema} 
+                                className="mt-4 border-amber-300 text-amber-900 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                              >
+                                <Copy className="mr-2 h-4 w-4" /> Copy Schema
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </CardContent>
                     )}

@@ -14,6 +14,7 @@ import { useQuizzes } from '@/hooks/useQuizzes.js';
 import { useStartAttempt } from '@/hooks/useStartAttempt.js';
 import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
 import { appendReturnUrl } from '@/utils/returnUrl.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const QuizList = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -64,7 +65,7 @@ const QuizList = () => {
     setHasShownLoadError(true);
     toast({
       title: 'Error',
-      description: 'Failed to load quizzes',
+      description: getUserFriendlyErrorMessage(null, 'Failed to load quizzes'),
       variant: 'destructive',
     });
   }, [hasShownLoadError, isError, toast]);
@@ -102,7 +103,7 @@ const QuizList = () => {
 
         toast({
           title: 'Error',
-          description: 'Failed to start quiz',
+          description: getUserFriendlyErrorMessage(error, 'Failed to start quiz'),
           variant: 'destructive',
         });
         setStartingQuizId(null);
@@ -193,7 +194,7 @@ const QuizList = () => {
           )}
 
           <div className="flex flex-wrap gap-4 md:gap-6">
-            {filteredQuizzes.map((quiz) => (
+            {filteredQuizzes.map((quiz, index) => (
               <QuizCard
                 key={quiz.id}
                 quiz={quiz}
@@ -203,6 +204,7 @@ const QuizList = () => {
                 startLabel={startButtonLabel(quiz)}
                 fullWidthButton={isDevFeaturesEnabled}
                 className="max-w-md"
+                defaultExpanded={index === 0}
               />
             ))}
           </div>

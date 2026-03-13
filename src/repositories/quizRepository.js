@@ -49,14 +49,15 @@ const validateQuizPayload = (quiz) => {
   if (!isNonEmptyString(quiz.title)) {
     throw new Error('title is required');
   }
-  if (!isNonEmptyString(quiz.shortDescription)) {
-    throw new Error('shortDescription is required');
+  // shortDescription, longDescription, and topic are optional as per JSON schemas
+  if (quiz.shortDescription !== undefined && typeof quiz.shortDescription !== 'string') {
+    throw new Error('shortDescription must be a string');
   }
-  if (!isNonEmptyString(quiz.longDescription)) {
-    throw new Error('longDescription is required');
+  if (quiz.longDescription !== undefined && typeof quiz.longDescription !== 'string') {
+    throw new Error('longDescription must be a string');
   }
-  if (!isNonEmptyString(quiz.topic)) {
-    throw new Error('topic is required');
+  if (quiz.topic !== undefined && typeof quiz.topic !== 'string') {
+    throw new Error('topic must be a string');
   }
   if (!DIFFICULTY_LEVELS.includes(quiz.difficulty)) {
     throw new Error('difficulty must be 1, 2, or 3');

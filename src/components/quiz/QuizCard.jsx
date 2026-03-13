@@ -1,7 +1,7 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { BookOpen, Clock, Play } from 'lucide-react';
+import { BookOpen, Clock, Play, ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -30,9 +30,12 @@ const QuizCard = ({
   isDevFeaturesEnabled = false,
   startLabel = 'Start Quiz',
   fullWidthButton = false,
+  defaultExpanded = false,
   className = '',
 }) => {
   const queryClient = useQueryClient();
+
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   const prefetchQuiz = useCallback(() => {
     if (!quiz?.id) return;
@@ -57,8 +60,8 @@ const QuizCard = ({
       onFocus={prefetchQuiz}
     >
       <CardHeader className="pb-3 min-h-[128px]">
-        <div className="flex items-start justify-between mb-2 gap-2">
-          <CardTitle className="text-lg md:text-xl leading-tight line-clamp-2">
+        <div className="flex flex-col md:flex-row items-start justify-between mb-2 gap-2">
+          <CardTitle className="text-lg md:text-xl leading-tight line-clamp-3 group/course:active:line-clamp-none">
             <Link
               to={`/quizzes/${quiz.id}`}
               className="hover:text-indigo-700 dark:hover:text-indigo-300"
@@ -68,27 +71,41 @@ const QuizCard = ({
               {quiz.title}
             </Link>
           </CardTitle>
-          <Badge variant={getDifficultyVariant(quiz.difficulty)} className="shrink-0">
-            {quiz.difficulty}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={getDifficultyVariant(quiz.difficulty)} className="shrink-0">
+              {quiz.difficulty}
+            </Badge>
+            <Badge
+              variant="outline"
+              className="md:hidden bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
+            >
+              {quiz.topic}
+            </Badge>
+          </div>
         </div>
-        <CardDescription className="text-sm md:text-base line-clamp-3">
+        <CardDescription className={`text-sm md:text-base ${isExpanded ? 'block' : 'hidden md:block'}`} >
           {quiz.shortDescription || quiz.description || quiz.longDescription}
         </CardDescription>
+        <Button variant="ghost" className="self-start md:hidden gap-2 py-1 px-2" onClick={() => setIsExpanded(!isExpanded)}>
+          {isExpanded ? 'Hide Description' : 'Show Description'}
+          <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+        </Button>
       </CardHeader>
       <CardContent className="mt-auto pt-0 flex flex-col">
-        <div className="space-y-3 mb-4 flex-1">
-          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-            <BookOpen className="h-4 w-4" />
-            <span>{quiz.questionCount} questions</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-            <Clock className="h-4 w-4" />
-            <span>~{quiz.estimatedTime} minutes</span>
+        <div className="space-y-2 mb-4 flex flex-start flex-col">
+          <div className='flex flex-row gap-5 flex-start md:flex-col'>
+            <div className="flex w-fit md:w-auto items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+              <BookOpen className="h-4 w-4" />
+              <span>{quiz.questionCount} questions</span>
+            </div>
+            <div className="flex w-fit md:w-auto items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+              <Clock className="h-4 w-4" />
+              <span>~{quiz.estimatedTime} minutes</span>
+            </div>
           </div>
           <Badge
             variant="outline"
-            className="bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
+            className="hidden md:flex md:w-fit bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
           >
             {quiz.topic}
           </Badge>

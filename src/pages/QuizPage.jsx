@@ -6,6 +6,7 @@ import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import QuizRunner from '@/components/quiz/QuizRunner.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAttemptQuizSession } from '@/hooks/useAttemptQuizSession.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const QuizPage = () => {
   const { id } = useParams();
@@ -23,7 +24,7 @@ const QuizPage = () => {
 
     toast({
       title: 'Error',
-      description: 'No attempt ID found',
+      description: getUserFriendlyErrorMessage(null, 'No attempt ID found'),
       variant: 'destructive',
     });
     navigate('/quizzes');
@@ -35,7 +36,7 @@ const QuizPage = () => {
 
     toast({
       title: 'Error',
-      description: 'Attempt does not match selected quiz',
+      description: getUserFriendlyErrorMessage(null, 'Attempt does not match selected quiz'),
       variant: 'destructive',
     });
     navigate('/quizzes');
@@ -47,7 +48,7 @@ const QuizPage = () => {
     setHasShownLoadError(true);
     toast({
       title: 'Error',
-      description: 'Failed to load quiz',
+      description: getUserFriendlyErrorMessage(null, 'Failed to load quiz'),
       variant: 'destructive',
     });
     navigate('/quizzes');

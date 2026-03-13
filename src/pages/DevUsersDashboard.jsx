@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { deleteAdminGuestUsers, getAdminUsersSnapshot } from '@/api/api.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const computeInactiveDays = (user) => {
   const lastActive = user?.lastActiveAt || user?.createdAt;
@@ -46,7 +47,7 @@ const DevUsersDashboard = () => {
     } catch (error) {
       toast({
         title: 'Failed to load users',
-        description: error.message || 'Could not fetch users snapshot.',
+        description: getUserFriendlyErrorMessage(error, 'Could not fetch users snapshot.'),
         variant: 'destructive',
       });
     } finally {
@@ -119,7 +120,7 @@ const DevUsersDashboard = () => {
     } catch (error) {
       toast({
         title: 'Guest cleanup failed',
-        description: error.message || 'Could not delete selected guests.',
+        description: getUserFriendlyErrorMessage(error, 'Could not delete selected guests.'),
         variant: 'destructive',
       });
     } finally {

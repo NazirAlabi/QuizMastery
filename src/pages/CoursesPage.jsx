@@ -18,13 +18,27 @@ import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
 import { appendReturnUrl } from '@/utils/returnUrl.js';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const CoursesPage = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [startingQuizId, setStartingQuizId] = useState(null);
   const [selectedCourseFilters, setSelectedCourseFilters] = useState([]);
   const [hasShownLoadError, setHasShownLoadError] = useState(false);
+  const [expandedCourseIds, setExpandedCourseIds] = useState(new Set());
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+
+  const toggleCourseDescription = useCallback((courseId) => {
+    setExpandedCourseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(courseId)) {
+        next.delete(courseId);
+      } else {
+        next.add(courseId);
+      }
+      return next;
+    });
+  }, []);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, isDevFeaturesEnabled } = useAuth();
@@ -48,7 +62,7 @@ const CoursesPage = () => {
     setHasShownLoadError(true);
     toast({
       title: 'Error',
-      description: 'Failed to load courses',
+      description: getUserFriendlyErrorMessage(null, 'Failed to load courses'),
       variant: 'destructive',
     });
   }, [hasShownLoadError, isError, toast]);
@@ -86,7 +100,7 @@ const CoursesPage = () => {
 
         toast({
           title: 'Error',
-          description: 'Failed to start quiz',
+          description: getUserFriendlyErrorMessage(error, 'Failed to start quiz'),
           variant: 'destructive',
         });
         setStartingQuizId(null);
@@ -235,7 +249,7 @@ const CoursesPage = () => {
 
           <div className="space-y-8">
             {visibleCourses.map((course) => (
-              <section key={course.id} className="space-y-4">
+              <section key={course.id} className="space-y-4 group/course">
                 <div>
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -250,9 +264,11 @@ const CoursesPage = () => {
                     </h2>
                     {course.courseCode ? <Badge variant="outline">{course.courseCode}</Badge> : null}
                   </div>
-                  <p className="text-slate-600 dark:text-slate-400 md:w-[700px] line-clamp-2 md:line-clamp-4 hover:line-clamp-none">
-                    {course.shortDescription || course.description || ''}
-                  </p>
+                  <button onClick={() => toggleCourseDescription(course.id)} className='text-start'>
+                    <p className={`text-slate-600 dark:text-slate-400 md:w-[700px] ${expandedCourseIds.has(course.id) ? '' : 'line-clamp-2 md:line-clamp-4'}`}>
+                      {course.shortDescription || course.description || ''}
+                    </p>
+                  </button>
                 </div>
 
                 {course.quizzes.length === 0 ? (
@@ -266,7 +282,7 @@ const CoursesPage = () => {
                   </Card>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-                    {course.quizzes.map((quiz) => (
+                    {course.quizzes.map((quiz, index) => (
                       <QuizCard
                         key={quiz.id}
                         quiz={quiz}
@@ -275,6 +291,7 @@ const CoursesPage = () => {
                         isDevFeaturesEnabled={isDevFeaturesEnabled}
                         startLabel={getStartLabel(quiz)}
                         fullWidthButton={isDevFeaturesEnabled}
+                        defaultExpanded={index === 0}
                       />
                     ))}
                   </div>

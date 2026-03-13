@@ -4,11 +4,11 @@ Generate a quiz question set based on the following quiz description:
 
 Your task is to produce a valid JSON object that includes a title, a thoughtful estimate of the time required to complete the quiz (in minutes), and the array of questions. Follow this two‑step process internally:
 
-1. **Design the quiz questions** – Carefully create the question set according to all requirements below (coverage, types, LaTeX, difficulty, skill category, explanations, etc.). Ensure the questions collectively address every focus topic listed in the description.
-2. **Estimate the time** – After the questions are designed, think about the time a typical learner would need to answer them. Provide an estimate on the **lower end** (i.e., a reasonably quick but attentive pace). Base this on the number of questions, their types (MCQ, numeric, short answer), and their difficulty/complexity. For example, simple recall MCQs might take 30 seconds each, while a multi‑step calculation could take 2 minutes. Use your judgment; do not simply apply a formula. (A fallback guideline of 1 minute per 2 questions is only a server‑side default – your reasoned estimate is preferred.)
+Design the quiz questions – Carefully create the question set according to all requirements below (coverage, types, LaTeX, difficulty, skill category, explanations, etc.). Ensure the questions collectively address every focus topic listed in the description.
 
-Finally, output **only** the JSON object with this structure:
+Estimate the time – After the questions are designed, think about the time a typical learner would need to answer them. Provide an estimate on the lower end (i.e., a reasonably quick but attentive pace). Base this on the number of questions, their types (MCQ, numeric, short answer), and their difficulty/complexity. For example, simple recall MCQs might take 30 seconds each, while a multi‑step calculation could take 2 minutes. Use your judgment; do not simply apply a formula. (A fallback guideline of 1 minute per 2 questions is only a server‑side default – your reasoned estimate is preferred.)
 
+Finally, output only the JSON object with this structure:
 
 {
   "title": "string (concise title derived from the description; use the 'Topic:' line if present, otherwise create a short descriptive title)",
@@ -50,8 +50,28 @@ For Numeric:
   "numeric_answer": 123.45,  // The correct numeric value
   "tolerance": 0.01  // Acceptable margin of error
 }
-LATEX SUPPORT
-The platform fully supports LaTeX math rendering. Use $...$ for inline math and $$...$$ for display math wherever appropriate. This is especially important for questions involving chemical formulas, equations, mathematical expressions, or any scientific notation. For example, you might write "The reaction $C_6H_{12}O_6 + 6O_2 \rightarrow 6CO_2 + 6H_2O$ represents..." or "Calculate $\int_0^1 x^2 dx$." Ensure all LaTeX is correctly escaped for JSON (e.g., use double backslashes for LaTeX commands like \\rightarrow).
+LATEX SUPPORT – CRITICAL: ESCAPE BACKSLASHES
+The platform fully supports LaTeX math rendering. Use $...$ for inline math and $$...$$ for display math wherever appropriate. This is especially important for questions involving chemical formulas, equations, mathematical expressions, or any scientific notation.
+
+⚠️ IMPORTANT JSON REQUIREMENT: In JSON, the backslash (\) is an escape character. To include a literal backslash in a string (as needed for LaTeX commands), you must write two backslashes (\\) for every single backslash that should appear in the final LaTeX.
+
+For example:
+
+\Delta must be written as \\Delta
+
+\int → \\int
+
+\sum → \\sum
+
+\rightarrow → \\rightarrow
+
+\frac{1}{2} → \\frac{1}{2}
+
+\ln → \\ln
+
+\log → \\log
+
+Failure to double the backslashes will result in an "invalid escape character" error and the JSON will be rejected. Always verify that every LaTeX command in your JSON strings uses double backslashes.
 
 QUESTION REQUIREMENTS
 COVERAGE: The question set must collectively address ALL focus topics listed in the quiz description. Distribute questions across topics as you see fit based on relevance and the natural need for assessment.
@@ -91,7 +111,9 @@ ORDER: Questions should be arranged in random order by topic. If possible, order
 COUNT: Generate exactly [estimated_questions] questions as specified in the quiz description.
 
 VALIDATION CHECKLIST (for your internal use)
-JSON is valid and properly formatted
+JSON is valid and properly formatted (no trailing commas, all strings properly quoted)
+
+All backslashes in LaTeX are doubled (e.g., \\Delta, \\int, \\sum, \\rightarrow, \\frac)
 
 Correct number of questions generated
 
@@ -113,7 +135,7 @@ Topic fields semantically map to focus topics
 
 Explanations are helpful and accurate
 
-LaTeX is used where appropriate and properly escaped
+LaTeX is used where appropriate
 
 Title is descriptive and derived from the description
 

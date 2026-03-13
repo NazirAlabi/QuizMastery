@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { GraduationCap } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { appendReturnUrl, resolveReturnUrl } from '@/utils/returnUrl.js';
+import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -31,22 +32,20 @@ const Login = () => {
     const result = await login(email, password);
 
     if (result.success) {
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    const result = await login(email, password);
+
+    if (result.success) {
       toast({
         title: 'Welcome back!',
         description: 'Successfully logged in',
       });
       navigate(returnUrl, { replace: true });
     } else {
-      toast({
-        title: 'Login Failed',
-        description: result.error || 'Invalid credentials',
-        variant: 'destructive'
-      });
-    }
-
-    setIsLoading(false);
-  };
-
   return (
     <>
       <Helmet>
