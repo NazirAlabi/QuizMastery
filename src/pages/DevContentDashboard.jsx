@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Navigate } from 'react-router-dom';
-import { Archive, ArchiveRestore, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { Archive, ArchiveRestore, Loader2, Plus, Trash2, Upload, ChevronDown, Copy } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
@@ -65,6 +65,53 @@ const QUESTION_DEFAULTS = {
   isArchived: false,
 };
 
+const EXPECTED_SCHEMA_TEXT = `{"questions": [
+  {
+    "type": "mcq",
+    "question_text": "What is the time complexity of binary search?",
+    "metadata": {
+      "options": [
+        { "id": "A", "text": "O(n)" },
+        { "id": "B", "text": "O(log n)" },
+        { "id": "C", "text": "O(n log n)" },
+        { "id": "D", "text": "O(1)" }
+      ],
+      "correct_answer": "B"
+    },
+    "difficulty": 1,
+    "topic": "Algorithms",
+    "skillCategory": 2,
+    "explanation": "Binary search halves the search space each iteration."
+  }
+]}
+
+for mcq
+"type": "mcq",
+"metadata": {
+  "options": [{ "id": "A", "text": "..." }],
+  "correct_answer": "A"
+}
+
+for short answer
+"type": "short_answer",
+"metadata": {
+  "accepted_answers": ["stack", "a stack"],
+  "case_sensitive": false,
+  "ignore_whitespace": true
+}
+
+for numeric
+"type": "numeric",
+"metadata": {
+  "numeric_answer": 3.14,
+  "tolerance": 0.01
+}
+
+for long answer
+"type": "long_answer",
+"metadata": {}
+`;
+
 const BULK_UPLOAD_TEMPLATE = '{\n  "questions": []\n}';
 
 const BULK_DEFAULTS = {
@@ -102,6 +149,7 @@ const SKILL_CATEGORY_OPTIONS = [
   { value: 2, label: 'Conceptual' },
   { value: 3, label: 'Application' },
 ];
+
 
 const parseCsvIds = (value) =>
   String(value || '')
@@ -164,6 +212,7 @@ const DevContentDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeduping, setIsDeduping] = useState(false);
+  const [schema, setSchema] = useState(false);
   const [courses, setCourses] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
   const [questions, setQuestions] = useState([]);
@@ -181,6 +230,7 @@ const DevContentDashboard = () => {
   const [bulkCourseToAddId, setBulkCourseToAddId] = useState('');
   const [quizLinkedCourseIds, setQuizLinkedCourseIds] = useState([]);
   const [bulkLinkedCourseIds, setBulkLinkedCourseIds] = useState([]);
+  const [bulkUploadMode, setBulkUploadMode] = useState('manual');
   const [dedupeProgress, setDedupeProgress] = useState(0);
   const [dedupeStatus, setDedupeStatus] = useState(DEDUPE_IDLE_MESSAGE);
   const [dedupeLogs, setDedupeLogs] = useState([DEDUPE_IDLE_MESSAGE]);
@@ -810,6 +860,40 @@ const DevContentDashboard = () => {
     event.target.value = '';
   };
 
+  const handlePasteJson = async (setter) => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setter((previous) => ({ ...previous, uploadText: text }));
+      toast({
+        title: 'Pasted successfully',
+        description: 'Text pasted from clipboard.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Paste failed',
+        description: 'Could not read from clipboard. Please paste manually.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handlePasteMetadataJson = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setQuestionForm((v) => ({ ...v, metadataJson: text }));
+      toast({
+        title: 'Pasted successfully',
+        description: 'Metadata pasted from clipboard.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Paste failed',
+        description: 'Could not read from clipboard. Please paste manually.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleBulkQuestionUploadFile = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -823,6 +907,7 @@ const DevContentDashboard = () => {
       setBulkForm(BULK_DEFAULTS);
       setBulkLinkedCourseIds([]);
       setBulkCourseToAddId('');
+      setBulkUploadMode('manual');
       return;
     }
 
@@ -879,28 +964,45 @@ const DevContentDashboard = () => {
       },
       async () => {
         const uploadPayload = JSON.parse(bulkForm.uploadText);
+        
+        let finalQuizPayload = {
+          title: bulkForm.title,
+          shortDescription: bulkForm.shortDescription,
+          longDescription: bulkForm.longDescription,
+          topic: bulkForm.topic,
+          difficulty: Number(bulkForm.difficulty),
+          estimatedTime: Number(bulkForm.estimatedTime),
+          isTimePerQuestion: Boolean(bulkForm.isTimePerQuestion),
+          questionIds: [],
+          isArchived: false,
+        };
+
+        if (!bulkForm.selectedQuizId && bulkUploadMode === 'json') {
+           finalQuizPayload = {
+              title: uploadPayload.title || '',
+              shortDescription: uploadPayload.shortDescription || '',
+              longDescription: uploadPayload.longDescription || '',
+              topic: uploadPayload.topic || '',
+              difficulty: Number(uploadPayload.difficulty) || 2,
+              estimatedTime: Number(uploadPayload.estimatedTime) || 15,
+              isTimePerQuestion: Boolean(uploadPayload.timeIsPerQuestion),
+              questionIds: [],
+              isArchived: false,
+           };
+        }
+
         const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
 
         if (!bulkForm.selectedQuizId) {
           const createdQuizResult = await createQuizFromQuestionUpload({
-            quizPayload: {
-              title: bulkForm.title,
-              shortDescription: bulkForm.shortDescription,
-              longDescription: bulkForm.longDescription,
-              topic: bulkForm.topic,
-              difficulty: Number(bulkForm.difficulty),
-              estimatedTime: Number(bulkForm.estimatedTime),
-              isTimePerQuestion: Boolean(bulkForm.isTimePerQuestion),
-              questionIds: [],
-              isArchived: false,
-            },
+            quizPayload: finalQuizPayload,
             uploadPayload,
-            courseId: '',
+            courseIds: bulkLinkedCourseIds,
           });
-          await syncQuizCourseAssociations(createdQuizResult.quiz.id, bulkLinkedCourseIds);
           setBulkForm(BULK_DEFAULTS);
           setBulkLinkedCourseIds([]);
           setBulkCourseToAddId('');
+          setBulkUploadMode('manual');
           return;
         }
 
@@ -1178,6 +1280,23 @@ Return only the description text.`;
       setIsDeduping(false);
     }
   };
+
+  const handleCopySchema = async () => {
+    try {
+      await navigator.clipboard.writeText(EXPECTED_SCHEMA_TEXT);
+      toast({
+        title: 'Schema copied',
+        description: 'The JSON schema template has been copied to your clipboard.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Copy failed',
+        description: 'Could not copy the schema to clipboard.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <>
       <Helmet>
@@ -1869,7 +1988,12 @@ Return only the description text.`;
                     </div>
 
                     <div>
-                      <Label>Metadata JSON</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>Metadata JSON</Label>
+                        <Button type="button" variant="ghost" size="sm" onClick={handlePasteMetadataJson} className="h-6 px-2 text-xs">
+                          <Copy className="h-3 w-3 mr-1" /> Paste from clipboard
+                        </Button>
+                      </div>
                       <textarea
                         className="mt-1 min-h-[180px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 font-mono text-xs dark:border-slate-800 dark:bg-slate-950"
                         value={questionForm.metadataJson}
@@ -1926,7 +2050,7 @@ Return only the description text.`;
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2">
+                      <div className="md:col-span-2 space-y-2">
                         <Label>Select existing quiz (optional)</Label>
                         <select
                           className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
@@ -1957,59 +2081,94 @@ Return only the description text.`;
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                           For existing quizzes, keep uploaded question count equal to linked question count so edits can be mapped by order.
                         </p>
+                        {!bulkForm.selectedQuizId && (
+                           <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-md dark:bg-slate-900 dark:border-slate-800 flex items-center justify-between">
+                              <div>
+                                <Label className="text-base text-slate-900 dark:text-white">Upload Mode</Label>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                  Choose how to enter quiz information for the new quiz.
+                                </p>
+                              </div>
+                              <div className="flex gap-2 bg-slate-200 dark:bg-slate-800 p-1 rounded-md">
+                                <button
+                                  type="button"
+                                  onClick={() => setBulkUploadMode('manual')}
+                                  className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${bulkUploadMode === 'manual' ? 'bg-white shadow-sm dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                >
+                                  Manual
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setBulkUploadMode('json')}
+                                  className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${bulkUploadMode === 'json' ? 'bg-white shadow-sm dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                >
+                                  JSON Schema
+                                </button>
+                              </div>
+                           </div>
+                        )}
                       </div>
-                      <div>
-                        <Label>Quiz title</Label>
-                        <Input value={bulkForm.title} onChange={(event) => setBulkForm((v) => ({ ...v, title: event.target.value }))} />
-                      </div>
-                      <div>
-                        <Label>Topic</Label>
-                        <Input value={bulkForm.topic} onChange={(event) => setBulkForm((v) => ({ ...v, topic: event.target.value }))} />
-                      </div>
-                      <div>
-                        <Label>Difficulty</Label>
-                        <select
-                          className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
-                          value={bulkForm.difficulty}
-                          onChange={(event) => setBulkForm((v) => ({ ...v, difficulty: Number(event.target.value) }))}
-                        >
-                          {QUIZ_DIFFICULTY_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="mt-2"
-                          onClick={handleAutoBulkDifficultyFromQuestions}
-                          disabled={!bulkForm.selectedQuizId}
-                        >
-                          Auto-calc from questions
-                        </Button>
-                      </div>
-                      <div>
-                        <Label>Estimated time (minutes)</Label>
-                        <Input type="number" min="1" value={bulkForm.estimatedTime} onChange={(event) => setBulkForm((v) => ({ ...v, estimatedTime: Number(event.target.value) }))} />
-                      </div>
+
+                      {(!bulkForm.selectedQuizId && bulkUploadMode === 'json') ? null : (
+                        <>
+                          <div>
+                            <Label>Quiz title</Label>
+                            <Input value={bulkForm.title} onChange={(event) => setBulkForm((v) => ({ ...v, title: event.target.value }))} />
+                          </div>
+                          <div>
+                            <Label>Topic <span className="text-slate-400 font-normal text-xs ml-1">(Optional)</span></Label>
+                            <Input value={bulkForm.topic} onChange={(event) => setBulkForm((v) => ({ ...v, topic: event.target.value }))} />
+                          </div>
+                          <div>
+                            <Label>Difficulty</Label>
+                            <select
+                              className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                              value={bulkForm.difficulty}
+                              onChange={(event) => setBulkForm((v) => ({ ...v, difficulty: Number(event.target.value) }))}
+                            >
+                              {QUIZ_DIFFICULTY_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2"
+                              onClick={handleAutoBulkDifficultyFromQuestions}
+                              disabled={!bulkForm.selectedQuizId}
+                            >
+                              Auto-calc from questions
+                            </Button>
+                          </div>
+                          <div>
+                            <Label>Estimated time (minutes) <span className="text-slate-400 font-normal text-xs ml-1">(Optional)</span></Label>
+                            <Input type="number" min="1" value={bulkForm.estimatedTime} onChange={(event) => setBulkForm((v) => ({ ...v, estimatedTime: Number(event.target.value) }))} />
+                          </div>
+                          <div className="md:col-span-2">
+                            <Label>Question IDs (display-only)</Label>
+                            <Input
+                              value={(selectedBulkQuiz?.questionIds || []).join(', ')}
+                              readOnly
+                              className="cursor-not-allowed opacity-80"
+                            />
+                          </div>
+                          
+                        </>
+                      )}
+                      
                       <div className="md:col-span-2">
-                        <Label>Question IDs (display-only)</Label>
-                        <Input
-                          value={(selectedBulkQuiz?.questionIds || []).join(', ')}
-                          readOnly
-                          className="cursor-not-allowed opacity-80"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label>Course IDs (display-only)</Label>
-                        <Input value={bulkForm.courseIds} readOnly className="cursor-not-allowed opacity-80" />
-                      </div>
+                            <Label>Course IDs (display-only)</Label>
+                            <Input value={bulkForm.courseIds} readOnly className="cursor-not-allowed opacity-80" />
+                          </div>
                     </div>
 
+                    {(!bulkForm.selectedQuizId && bulkUploadMode === 'json') ? null : (
+                      <>
                     <div>
-                      <Label>Short description</Label>
+                      <Label>Short description <span className="text-slate-400 font-normal text-xs ml-1">(Optional)</span></Label>
                       <textarea
                         className="mt-1 min-h-[80px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
                         value={bulkForm.shortDescription}
@@ -2019,7 +2178,7 @@ Return only the description text.`;
                       />
                     </div>
                     <div>
-                      <Label>Long description</Label>
+                      <Label>Long description <span className="text-slate-400 font-normal text-xs ml-1">(Optional)</span></Label>
                       <textarea
                         className="mt-1 min-h-[120px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
                         value={bulkForm.longDescription}
@@ -2038,6 +2197,8 @@ Return only the description text.`;
                       />
                       <Label htmlFor="bulkTimePerQuestion">Time is per-question</Label>
                     </div>
+                    </>
+                    )}
 
                     <div className="space-y-2 rounded-md border border-slate-300 p-3 dark:border-slate-800">
                       <Label>Current associated courses</Label>
@@ -2090,13 +2251,50 @@ Return only the description text.`;
                     </div>
 
                     <div>
-                      <Label>Questions JSON</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>{(!bulkForm.selectedQuizId && bulkUploadMode === 'json') ? 'Quiz JSON' : 'Questions JSON'}</Label>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => handlePasteJson(setBulkForm)} className="h-6 px-2 text-xs">
+                          <Copy className="h-3 w-3 mr-1" /> Paste from clipboard
+                        </Button>
+                      </div>
                       <textarea
                         className="mt-1 min-h-[220px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 font-mono text-xs dark:border-slate-800 dark:bg-slate-950"
                         value={bulkForm.uploadText}
                         onChange={(event) => setBulkForm((v) => ({ ...v, uploadText: event.target.value }))}
                       />
                     </div>
+
+                    <Card className="mb-6">
+                      <button
+                        type="button"
+                        onClick={() => setSchema(!schema)}
+                        className="w-full flex items-center justify-between text-left rounded-xl border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30"
+                      >
+                        <div>
+                          <CardHeader className="py-4 px-2">
+                            <CardTitle className="text-base text-amber-900 dark:text-amber-200">Expected Schema</CardTitle>
+                          </CardHeader>
+                        </div>
+                        <ChevronDown className={`h-6 w-6 font-bold md:font-extrabold mr-2 text-white ${schema ? 'rotate-180' : ''}`} />
+                      </button>
+                    {schema && ( 
+                      <CardContent className="max-h-96 overflow-auto scrollbar-thin scrollbar-thumb-amber-200 dark:scrollbar-thumb-amber-800">
+                        <div className="text-sm text-slate-600 dark:text-slate-400">
+                          <pre>
+{EXPECTED_SCHEMA_TEXT}
+                          </pre>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={handleCopySchema} 
+                            className="mt-4 border-amber-300 text-amber-900 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                          >
+                            <Copy className="mr-2 h-4 w-4" /> Copy Schema
+                          </Button>
+                        </div>
+                      </CardContent>
+                    )}
+                    </Card>
 
                     <Button disabled={isSaving} onClick={handleBulkUpsertQuiz}>
                       {isActionRunning('bulk-upsert-quiz') ? (
@@ -2131,13 +2329,50 @@ Return only the description text.`;
                     </div>
 
                     <div>
-                      <Label>Questions JSON</Label>
+                      <div className="flex items-center justify-between">
+                        <Label>Questions JSON</Label>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => handlePasteJson(setBulkQuestionForm)} className="h-6 px-2 text-xs">
+                          <Copy className="h-3 w-3 mr-1" /> Paste from clipboard
+                        </Button>
+                      </div>
                       <textarea
                         className="mt-1 min-h-[220px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 font-mono text-xs dark:border-slate-800 dark:bg-slate-950"
                         value={bulkQuestionForm.uploadText}
                         onChange={(event) => setBulkQuestionForm((v) => ({ ...v, uploadText: event.target.value }))}
                       />
                     </div>
+
+                    <Card className="mb-6">
+                      <button
+                        type="button"
+                        onClick={() => setSchema(!schema)}
+                        className="w-full flex items-center justify-between text-left rounded-xl border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30"
+                      >
+                        <div>
+                          <CardHeader className="py-4 px-2">
+                            <CardTitle className="text-base text-amber-900 dark:text-amber-200">Expected Schema</CardTitle>
+                          </CardHeader>
+                        </div>
+                        <ChevronDown className={`h-6 w-6 font-bold md:font-extrabold mr-2 text-white ${schema ? 'rotate-180' : ''}`} />
+                      </button>
+                    {schema && ( 
+                      <CardContent className="max-h-96 overflow-auto scrollbar-thin scrollbar-thumb-amber-200 dark:scrollbar-thumb-amber-800 scrollbar-track-transparent">
+                        <div className="text-sm text-slate-600 dark:text-slate-400">
+                          <pre>
+{EXPECTED_SCHEMA_TEXT}
+                          </pre>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={handleCopySchema} 
+                            className="mt-4 border-amber-300 text-amber-900 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                          >
+                            <Copy className="mr-2 h-4 w-4" /> Copy Schema
+                          </Button>
+                        </div>
+                      </CardContent>
+                    )}
+                    </Card>
 
                     <Button disabled={isSaving} onClick={handleBulkCreateQuestions}>
                       {isActionRunning('bulk-create-questions') ? (

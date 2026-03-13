@@ -1,0 +1,10 @@
+{
+    "title" : "Title of the quiz",
+    "topic" : "overall quiz topic", //optional(default to "")
+    "difficulty" : integer, //autocalculated from the questions with the autocalculation functions
+    "estimatedTime" : integer,//optional(default to 1 min per 2 questions and make is per question default to true)
+    "timeIsPerQuestion" :boolean, //optional(default to false)
+    "shortDescription" : "string", //optional(default to "")
+    "longDescription":"string", //optional(default to "")
+    "questions" : [] //according to question upload schema
+}

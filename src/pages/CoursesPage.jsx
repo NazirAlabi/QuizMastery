@@ -250,7 +250,7 @@ const CoursesPage = () => {
                     </h2>
                     {course.courseCode ? <Badge variant="outline">{course.courseCode}</Badge> : null}
                   </div>
-                  <p className="text-slate-600 dark:text-slate-400 w-1/2">
+                  <p className="text-slate-600 dark:text-slate-400 md:w-[700px] line-clamp-2 md:line-clamp-4 hover:line-clamp-none">
                     {course.shortDescription || course.description || ''}
                   </p>
                 </div>

@@ -885,7 +885,7 @@ export const archiveAdminCourse = async (courseId, archived = true) => {
 export const createQuizFromQuestionUpload = async ({
   quizPayload,
   uploadPayload,
-  courseId = '',
+  courseIds = [],
 }) => {
   const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
   const createdQuestionIds = [];
@@ -905,7 +905,13 @@ export const createQuizFromQuestionUpload = async ({
     isArchived: Boolean(quizPayload?.isArchived),
   });
 
-  await attachQuizToCourse(createdQuiz.id, courseId);
+  if (Array.isArray(courseIds) && courseIds.length > 0) {
+    for (const id of courseIds) {
+      await attachQuizToCourse(createdQuiz.id, id);
+    }
+  } else if (typeof courseIds === 'string' && courseIds.trim() !== '') {
+    await attachQuizToCourse(createdQuiz.id, courseIds);
+  }
 
   return {
     quiz: createdQuiz,
