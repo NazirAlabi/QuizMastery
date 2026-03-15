@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { Clock3, Play, ListChecks, Gauge, PauseCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card.jsx';
@@ -9,6 +10,9 @@ import { Button } from '@/components/ui/button.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useQuiz } from '@/hooks/useQuiz.js';
 import { useConfigureAttempt } from '@/hooks/useConfigureAttempt.js';
+import { useQuizzes } from '@/hooks/useQuizzes.js';
+import { useStartAttempt } from '@/hooks/useStartAttempt.js';
+import { useAuth } from '@/hooks/useAuth.js';
 import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const SPEED_OPTIONS = [
@@ -42,6 +46,10 @@ const QuizReady = () => {
   const [isCountdownActive, setIsCountdownActive] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const { toast } = useToast();
+  const { user } = useAuth();
+  
+  const { data: allQuizzes = [] } = useQuizzes();
+  const startAttemptMutation = useStartAttempt();
   const shouldFetchQuiz =
     Boolean(id) && (!quizTitle || questionCount == null || estimatedTime == null);
   const { data: fetchedQuiz } = useQuiz(id, { enabled: shouldFetchQuiz });
@@ -57,6 +65,56 @@ const QuizReady = () => {
     if (!Number.isFinite(Number(baseDurationSeconds))) return null;
     return Math.max(1, Math.round(Number(baseDurationSeconds) / Number(speedMultiplier)));
   }, [baseDurationSeconds, mode, speedMultiplier]);
+
+  const variations = useMemo(() => {
+    if (!fetchedQuiz && !quizTitle) return [];
+    const targetTitle = (fetchedQuiz?.title || quizTitle).trim().toLowerCase();
+    const targetTopic = (fetchedQuiz?.topic || location.state?.topic || '').trim().toLowerCase();
+    
+    return allQuizzes.filter(q => 
+      q.title.trim().toLowerCase() === targetTitle && 
+      (q.topic || '').trim().toLowerCase() === targetTopic
+    ).sort((a, b) => {
+      const diffs = { beginner: 1, intermediate: 2, advanced: 3 };
+      return (diffs[a.difficulty] || 99) - (diffs[b.difficulty] || 99);
+    });
+  }, [allQuizzes, fetchedQuiz, quizTitle, location.state?.topic]);
+
+  const handleDifficultyChange = async (newQuizId) => {
+    if (!user?.id || isInteractionLocked) return;
+    
+    try {
+      const selectedQuiz = variations.find(v => v.id === newQuizId);
+      if (!selectedQuiz) return;
+
+      const attempt = await startAttemptMutation.mutateAsync({
+        quizId: newQuizId,
+        userId: user.id,
+      });
+
+      // Update local state and navigate to new attempt
+      setQuizTitle(selectedQuiz.title);
+      setQuestionCount(selectedQuiz.questionCount);
+      setEstimatedTime(selectedQuiz.estimatedTime);
+      
+      navigate(`/quiz/${newQuizId}/ready?attemptId=${attempt.id}`, {
+        replace: true,
+        state: {
+          ...location.state,
+          quizTitle: selectedQuiz.title,
+          questionCount: selectedQuiz.questionCount,
+          estimatedTime: selectedQuiz.estimatedTime,
+          topic: selectedQuiz.topic
+        }
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to switch difficulty variation.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   useEffect(() => {
     if (!attemptId) {
@@ -161,6 +219,29 @@ const QuizReady = () => {
                 </>
               ) : (
                 <div className="space-y-5">
+                  {variations.length > 1 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Difficulty Variation</p>
+                      <div className="flex flex-wrap gap-2">
+                        {variations.map((v) => (
+                          <Button
+                            key={v.id}
+                            size="sm"
+                            type="button"
+                            variant={v.id === id ? 'default' : 'outline'}
+                            onClick={() => handleDifficultyChange(v.id)}
+                            disabled={isInteractionLocked || startAttemptMutation.isPending}
+                            className={cn(
+                              "h-10 min-w-[100px] border-2 transition-all duration-200",
+                              v.id === id ? "ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900" : "hover:border-indigo-400"
+                            )}
+                          >
+                            {v.difficulty.charAt(0).toUpperCase() + v.difficulty.slice(1)}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Timing mode</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -190,7 +271,7 @@ const QuizReady = () => {
                   {mode === 'timed' ? (
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Quiz speed</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                         {SPEED_OPTIONS.map((option) => (
                           <Button
                             key={option.value}

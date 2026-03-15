@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react';
+import { cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { BookOpen, Clock, Play, ChevronDown } from 'lucide-react';
@@ -32,13 +33,27 @@ const QuizCard = ({
   fullWidthButton = false,
   defaultExpanded = false,
   className = '',
+  variations = [],
+  isGrid = false,
 }) => {
   const queryClient = useQueryClient();
 
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [activeQuiz, setActiveQuiz] = useState(quiz);
+
+  // Sync activeQuiz if quiz prop changes
+  React.useEffect(() => {
+    setActiveQuiz(quiz);
+  }, [quiz]);
+
+  const hasVariations = variations && variations.length > 1;
+  const sortedVariations = React.useMemo(() => {
+    return [...variations].sort((a, b) => Number(a.difficulty) - Number(b.difficulty));
+  }, [variations]);
 
   const prefetchQuiz = useCallback(() => {
-    if (!quiz?.id) return;
+    const id = activeQuiz?.id;
+    if (!id) return;
 
     queryClient.prefetchQuery({
       queryKey: queryKeys.quizPage(quiz.id),
@@ -55,74 +70,151 @@ const QuizCard = ({
 
   return (
     <Card
-      className={`hover:shadow-lg transition-shadow flex flex-col h-full dark:hover:shadow-slate-800/50 ${className}`}
+      className={cn(
+        'hover:shadow-lg transition-shadow flex flex-col dark:hover:shadow-slate-800/50 overflow-hidden w-full h-full group',
+        className
+      )}
       onMouseEnter={prefetchQuiz}
       onFocus={prefetchQuiz}
     >
-      <CardHeader className="pb-3 min-h-[128px]">
-        <div className="flex flex-col md:flex-row items-start justify-between mb-2 gap-2">
-          <CardTitle className="text-lg md:text-xl leading-tight line-clamp-3 group/course:active:line-clamp-none">
+      <CardHeader className={cn(
+        'pb-2',
+        isGrid ? 'space-y-1 p-3' : 'pb-3 min-h-[128px]'
+      )}>
+        <div className={cn(
+          'flex items-start justify-between gap-2',
+          isGrid ? 'flex-col' : 'flex-col md:flex-row mb-2'
+        )}>
+          <CardTitle className={cn(
+            'text-lg leading-tight group/course:active:line-clamp-none line-clamp-3',
+            isGrid ? ' text-base group-focus:line-clamp-none' : 'md:text-xl'
+          )}>
             <Link
-              to={`/quizzes/${quiz.id}`}
+              to={`/quizzes/${activeQuiz.id}`}
               className="hover:text-indigo-700 dark:hover:text-indigo-300"
               onMouseEnter={prefetchQuiz}
               onFocus={prefetchQuiz}
             >
-              {quiz.title}
+              {activeQuiz.title}
             </Link>
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Badge variant={getDifficultyVariant(quiz.difficulty)} className="shrink-0">
-              {quiz.difficulty}
-            </Badge>
-            <Badge
-              variant="outline"
-              className="md:hidden bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
-            >
-              {quiz.topic}
-            </Badge>
+            {hasVariations ? (
+              <div className="relative group/difficulty">
+                  <select
+                    value={activeQuiz.id}
+                    onChange={(e) => {
+                      const selected = variations.find((v) => v.id === e.target.value);
+                      if (selected) setActiveQuiz(selected);
+                    }}
+                    className={cn(
+                      'appearance-none cursor-pointer pr-8 pl-3 py-1 rounded-full text-[11px] font-bold border-[1.5px] transition-all duration-200 outline-none shadow-sm',
+                      (() => {
+                        const variant = getDifficultyVariant(activeQuiz.difficulty);
+                        switch (variant) {
+                          case 'success':
+                            return 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:border-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/60 dark:hover:border-emerald-700';
+                          case 'warning':
+                            return 'bg-amber-50 text-amber-700 border-amber-200 hover:border-amber-400 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/60 dark:hover:border-amber-700';
+                          case 'destructive':
+                            return 'bg-rose-50 text-rose-700 border-rose-200 hover:border-rose-400 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/60 dark:hover:border-rose-700';
+                          default:
+                            return 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-400 dark:bg-slate-800/40 dark:text-slate-300 dark:border-slate-700';
+                        }
+                      })()
+                    )}
+                  >
+                    {sortedVariations.map((v) => (
+                      <option
+                        key={v.id}
+                        value={v.id}
+                        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                      >
+                        {v.difficulty.charAt(0).toUpperCase() + v.difficulty.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-current opacity-70">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </div>
+              </div>
+            ) : (
+              <Badge variant={getDifficultyVariant(activeQuiz.difficulty)} className="shrink-0 text-[10px] px-1.5 py-0">
+                {activeQuiz.difficulty}
+              </Badge>
+            )}
+            {!isGrid && (
+              <Badge
+                variant="outline"
+                className="md:hidden bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
+              >
+                {activeQuiz.topic}
+              </Badge>
+            )}
           </div>
         </div>
-        <CardDescription className={`text-sm md:text-base ${isExpanded ? 'block' : 'hidden md:block'}`} >
-          {quiz.shortDescription || quiz.description || quiz.longDescription}
-        </CardDescription>
-        <Button variant="ghost" className="self-start md:hidden gap-2 py-1 px-2" onClick={() => setIsExpanded(!isExpanded)}>
-          {isExpanded ? 'Hide Description' : 'Show Description'}
-          <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-        </Button>
+        {!isGrid && !(activeQuiz.shortDescription === '' && activeQuiz.description === '' && activeQuiz.longDescription === '') ? (
+          <>
+            <CardDescription className={`text-sm md:text-base ${isExpanded ? 'block' : 'hidden md:block'}`} >
+              {activeQuiz.shortDescription || activeQuiz.description || activeQuiz.longDescription}
+            </CardDescription>
+            <Button variant="ghost" className="self-start md:hidden gap-2 py-1 px-2" onClick={() => setIsExpanded(!isExpanded)}>
+              {isExpanded ? 'Hide Description' : 'Show Description'}
+              <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+            </Button>
+          </>
+        ) : null}
       </CardHeader>
-      <CardContent className="mt-auto pt-0 flex flex-col">
-        <div className="space-y-2 mb-4 flex flex-start flex-col">
-          <div className='flex flex-row gap-5 flex-start md:flex-col'>
-            <div className="flex w-fit md:w-auto items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-              <BookOpen className="h-4 w-4" />
-              <span>{quiz.questionCount} questions</span>
+      <CardContent className={cn(
+        'mt-auto flex flex-col',
+        isGrid ? 'p-3 pt-0' : 'pt-0'
+      )}>
+        <div className={cn(
+          'space-y-1 flex flex-col',
+          isGrid ? 'mb-2' : 'mb-4'
+        )}>
+          <div className={cn(
+            'flex gap-3',
+            isGrid ? 'flex-row items-center text-[11px]' : 'flex-row gap-5 md:gap-2 flex-start md:flex-col text-sm'
+          )}>
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <BookOpen className={isGrid ? "h-3.5 w-3.5" : "h-4 w-4"} />
+              <span>{activeQuiz.questionCount} {isGrid ? 'q' : 'questions'}</span>
             </div>
-            <div className="flex w-fit md:w-auto items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-              <Clock className="h-4 w-4" />
-              <span>~{quiz.estimatedTime} minutes</span>
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <Clock className={isGrid ? "h-3.5 w-3.5" : "h-4 w-4"} />
+              <span>{activeQuiz.estimatedTime} {isGrid ? 'min' : 'minutes'}</span>
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className="hidden md:flex md:w-fit bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
-          >
-            {quiz.topic}
-          </Badge>
-          {isDevFeaturesEnabled ? (
+          {!isGrid && (
+            <Badge
+              variant="outline"
+              className="hidden md:flex mt-2 md:w-fit bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
+            >
+              {activeQuiz.topic}
+            </Badge>
+          )}
+          {isDevFeaturesEnabled && !isGrid && (
             <div className="text-xs text-slate-500 font-mono dark:text-slate-400">
-              quizId={quiz.id} | timing={quiz.timing?.enabled ? 'timed' : 'untimed'}
+              id={activeQuiz.id}
             </div>
-          ) : null}
+          )}
         </div>
 
         <Button
-          onClick={() => onStart(quiz)}
+          onClick={() => onStart(activeQuiz)}
           disabled={isStarting}
-          className={`${fullWidthButton ? 'w-full' : 'w-48 self-center'} min-h-[2.75rem] md:min-h-[2.5rem] bg-indigo-600 hover:bg-indigo-700 text-white text-base dark:bg-indigo-500 dark:hover:bg-indigo-600`}
+          size={isGrid ? 'sm' : 'default'}
+          className={cn(
+            'bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-all',
+            isGrid ? 'w-full h-8 text-xs' : `${fullWidthButton ? 'w-full' : 'w-48 self-center'} min-h-[2.5rem] text-base`
+          )}
         >
-          <Play className="h-5 w-5 md:h-4 md:w-4 mr-2 hover:fill-white" />
-          {isStarting ? 'Starting...' : startLabel}
+          <Play className={cn(
+            'mr-1.5 hover:fill-white',
+            isGrid ? 'h-3 w-3' : 'h-4 w-4'
+          )} />
+          {isStarting ? '...' : startLabel}
         </Button>
       </CardContent>
     </Card>
@@ -131,6 +223,7 @@ const QuizCard = ({
 
 const areEqual = (previousProps, nextProps) =>
   previousProps.quiz === nextProps.quiz &&
+  previousProps.variations === nextProps.variations &&
   previousProps.isStarting === nextProps.isStarting &&
   previousProps.isDevFeaturesEnabled === nextProps.isDevFeaturesEnabled &&
   previousProps.startLabel === nextProps.startLabel &&

@@ -13,7 +13,7 @@ const QuizList = lazy(() => import('@/pages/QuizList.jsx'));
 const QuizReady = lazy(() => import('@/pages/QuizReady.jsx'));
 const QuizPage = lazy(() => import('@/pages/QuizPage.jsx'));
 const ResultsPage = lazy(() => import('@/pages/ResultsPage.jsx'));
-const InsightsPage = lazy(() => import('@/pages/InsightsPage.jsx'));
+const ProgressHistoryPage = lazy(() => import('@/pages/ProgressHistoryPage.jsx'));
 const CoursesPage = lazy(() => import('@/pages/CoursesPage.jsx'));
 const CourseDetailPage = lazy(() => import('@/pages/CourseDetailPage.jsx'));
 const QuizDetailPage = lazy(() => import('@/pages/QuizDetailPage.jsx'));
@@ -89,7 +89,7 @@ function App() {
 
             <Route
               path="/insights"
-              element={renderRoute(<InsightsPage />)}
+              element={renderRoute(<ProgressHistoryPage />)}
             />
             
             <Route path="*" element={<Navigate to="/" replace />} />

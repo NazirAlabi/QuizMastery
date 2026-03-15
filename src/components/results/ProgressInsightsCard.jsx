@@ -16,9 +16,16 @@ const ProgressInsightsCard = ({
   const quizTopicSummary = Array.isArray(progressInsights?.quizTopicSummary)
     ? progressInsights.quizTopicSummary
     : [];
+  const skillSummary = Array.isArray(progressInsights?.skillSummary)
+    ? progressInsights.skillSummary
+    : [];
+  const difficultySummary = Array.isArray(progressInsights?.difficultySummary)
+    ? progressInsights.difficultySummary
+    : [];
+
   const totalSubmittedAttempts = Number(progressInsights?.totalSubmittedAttempts || 0);
   const hasProgressData =
-    totalSubmittedAttempts > 1 && (questionTopicSummary.length > 0 || quizTopicSummary.length > 0);
+    totalSubmittedAttempts >= 1 && (questionTopicSummary.length > 0 || quizTopicSummary.length > 0);
   const hasCurrentAttempt = currentAttemptTopics.length > 0;
 
   const formatDelta = (delta) => {
@@ -57,15 +64,6 @@ const ProgressInsightsCard = ({
     () => [...quizTopicSummary].sort((a, b) => b.overallAccuracy - a.overallAccuracy),
     [quizTopicSummary]
   );
-  const topQuizTopics = sortedQuizTopics.slice(0, 3);
-  const bottomQuizTopics = [...sortedQuizTopics]
-    .sort((a, b) => a.overallAccuracy - b.overallAccuracy)
-    .slice(0, 3);
-  const quizTopicLookup = useMemo(
-    () => new Map(quizTopicSummary.map((entry) => [entry.topic, entry])),
-    [quizTopicSummary]
-  );
-  const currentQuizTrend = currentQuizTopic ? quizTopicLookup.get(currentQuizTopic) : null;
 
   const recentQuestionChanges = useMemo(
     () =>
@@ -80,19 +78,6 @@ const ProgressInsightsCard = ({
     [questionTopicSummary]
   );
 
-  const recentQuizChanges = useMemo(
-    () =>
-      quizTopicSummary
-        .filter((entry) => Number.isFinite(entry.delta))
-        .sort((a, b) => {
-          const aTime = a.lastAttemptAt ? new Date(a.lastAttemptAt).getTime() : 0;
-          const bTime = b.lastAttemptAt ? new Date(b.lastAttemptAt).getTime() : 0;
-          return bTime - aTime;
-        })
-        .slice(0, 5),
-    [quizTopicSummary]
-  );
-
   return (
     <Card>
       <CardHeader className="pb-4">
@@ -104,10 +89,10 @@ const ProgressInsightsCard = ({
           <div>
             <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
               <TrendingUp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-              Progress Insights
+              Performance Insights
             </CardTitle>
             <CardDescription>
-              Track strengths, weaknesses, and recent changes across attempts
+              Analysis of strengths and growth across topics, difficulty levels, and skills
             </CardDescription>
           </div>
           <ChevronDown
@@ -119,226 +104,159 @@ const ProgressInsightsCard = ({
         </button>
       </CardHeader>
       {isOpen && (
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-8">
           {loading ? (
-            <p className="text-sm text-slate-600 dark:text-slate-400">Loading progress insights...</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Loading insights...</p>
           ) : !hasProgressData ? (
-            <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400">
-              Complete at least two submitted attempts to see cross-quiz progress insights.
+            <div className="rounded-lg border border-dashed border-slate-200 p-8 text-center text-sm text-slate-600 dark:border-slate-800 dark:text-slate-400">
+              Submit at least one quiz to see detailed performance insights.
             </div>
           ) : (
             <>
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Target className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                  Question Topics (Across Attempts)
-                </p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    Strongest topics
+              {/* Topic-based Insights */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                  <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                    Topic Mastery
                   </p>
-                  <div className="mt-3 space-y-2">
-                    {topQuestionTopics.length > 0 ? (
-                      topQuestionTopics.map((entry) => (
-                        <div key={entry.topic} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-700 dark:text-slate-300">{entry.topic}</span>
-                          <span className="font-semibold text-slate-900 dark:text-slate-100">
-                            {entry.overallAccuracy}%
-                          </span>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      Top Performant Topics
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {topQuestionTopics.length > 0 ? (
+                        topQuestionTopics.map((entry) => (
+                          <div key={entry.topic} className="flex items-center justify-between text-sm">
+                            <span className="text-slate-700 dark:text-slate-300">{entry.topic}</span>
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">
+                              {entry.overallAccuracy}%
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Not enough data.</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      Growth Opportunities
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {bottomQuestionTopics.length > 0 ? (
+                        bottomQuestionTopics.map((entry) => (
+                          <div key={entry.topic} className="flex items-center justify-between text-sm">
+                            <span className="text-slate-700 dark:text-slate-300">{entry.topic}</span>
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">
+                              {entry.overallAccuracy}%
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Not enough data.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="h-px bg-slate-200 dark:bg-slate-800" />
+
+              {/* Skill & Difficulty Aggregation Grid */}
+              <div className="grid gap-6 md:grid-cols-2">
+                {/* Skill Summary */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                    <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                      Skill Breakdown
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    {skillSummary.length > 0 ? (
+                      skillSummary.map((skill) => (
+                        <div key={skill.topic} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-700 capitalize dark:text-slate-300">{skill.topic}</span>
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {skill.overallAccuracy}%
+                            </span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden dark:bg-slate-800">
+                            <div 
+                              className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                              style={{ width: `${skill.overallAccuracy}%` }}
+                            />
+                          </div>
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">No topic data yet.</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Skill data not yet available.</p>
                     )}
                   </div>
                 </div>
-                <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    Topics to improve
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {bottomQuestionTopics.length > 0 ? (
-                      bottomQuestionTopics.map((entry) => (
-                        <div key={entry.topic} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-700 dark:text-slate-300">{entry.topic}</span>
-                          <span className="font-semibold text-slate-900 dark:text-slate-100">
-                            {entry.overallAccuracy}%
-                          </span>
+
+                {/* Difficulty Summary */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Target className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                    <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                      Difficulty Performance
+                    </p>
+                  </div>
+                  <div className="space-y-3">
+                    {difficultySummary.length > 0 ? (
+                      difficultySummary.map((diff) => (
+                        <div key={diff.topic} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-700 capitalize dark:text-slate-300">{diff.topic}</span>
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              {diff.overallAccuracy}%
+                            </span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden dark:bg-slate-800">
+                            <div 
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500",
+                                diff.topic.toLowerCase() === 'easy' ? "bg-green-500" :
+                                diff.topic.toLowerCase() === 'medium' ? "bg-amber-500" : "bg-rose-500"
+                              )}
+                              style={{ width: `${diff.overallAccuracy}%` }}
+                            />
+                          </div>
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">No topic data yet.</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Difficulty data not yet available.</p>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  {hasCurrentAttempt ? 'This attempt vs previous' : 'Recent changes'}
+              {/* Recent Topic Changes */}
+              <div className="rounded-lg border border-slate-200 p-4 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                <p className="text-sm font-semibold text-slate-800 mb-3 dark:text-slate-200">
+                  Recent Topic Trends
                 </p>
-                <div className="mt-3 space-y-2">
-                  {hasCurrentAttempt ? (
-                    currentAttemptTopics.map((topic) => {
-                      const summary = questionTopicLookup.get(topic.topic);
-                      const delta = Number.isFinite(summary?.delta) ? summary.delta : null;
-                      const previousAccuracy = Number.isFinite(summary?.previousAccuracy)
-                        ? summary.previousAccuracy
-                        : null;
-
-                      return (
-                        <div key={topic.topic} className="flex items-center justify-between text-sm">
-                          <div>
-                            <p className="font-medium text-slate-800 dark:text-slate-200">{topic.topic}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              {topic.correct}/{topic.total} ({topic.accuracy}%)
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            {previousAccuracy === null ? (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">No prior data</p>
-                            ) : (
-                              <div className={`flex items-center justify-end gap-1 font-semibold ${getDeltaStyle(delta)}`}>
-                                {renderDeltaIcon(delta)}
-                                <span>{formatDelta(delta)}</span>
-                              </div>
-                            )}
-                            {previousAccuracy !== null && (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Prev {previousAccuracy}%
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : recentQuestionChanges.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {recentQuestionChanges.length > 0 ? (
                     recentQuestionChanges.map((entry) => (
-                      <div key={entry.topic} className="flex items-center justify-between text-sm">
-                        <div>
-                          <p className="font-medium text-slate-800 dark:text-slate-200">{entry.topic}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Latest {entry.lastAccuracy ?? 0}% overall
-                          </p>
-                        </div>
-                        <div className={`flex items-center gap-1 font-semibold ${getDeltaStyle(entry.delta)}`}>
+                      <div key={entry.topic} className="flex items-center justify-between p-2 rounded bg-white border border-slate-100 dark:bg-slate-950 dark:border-slate-800">
+                        <span className="text-xs font-medium text-slate-700 truncate mr-2 dark:text-slate-300">{entry.topic}</span>
+                        <div className={`flex items-center gap-1 text-xs font-bold ${getDeltaStyle(entry.delta)}`}>
                           {renderDeltaIcon(entry.delta)}
                           <span>{formatDelta(entry.delta)}</span>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <p className="text-xs text-slate-500 dark:text-slate-400">No recent topic changes yet.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 italic">Continue taking quizzes to see your growth trends.</p>
                   )}
                 </div>
               </div>
-            </div>
-
-            <div className="h-px bg-slate-200 dark:bg-slate-800" />
-
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-                <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                  Quiz Topics (Across Attempts)
-                </p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    Strongest quiz topics
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {topQuizTopics.length > 0 ? (
-                      topQuizTopics.map((entry) => (
-                        <div key={entry.topic} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-700 dark:text-slate-300">{entry.topic}</span>
-                          <span className="font-semibold text-slate-900 dark:text-slate-100">
-                            {entry.overallAccuracy}%
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">No quiz topic data yet.</p>
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                    Quiz topics to improve
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {bottomQuizTopics.length > 0 ? (
-                      bottomQuizTopics.map((entry) => (
-                        <div key={entry.topic} className="flex items-center justify-between text-sm">
-                          <span className="text-slate-700 dark:text-slate-300">{entry.topic}</span>
-                          <span className="font-semibold text-slate-900 dark:text-slate-100">
-                            {entry.overallAccuracy}%
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">No quiz topic data yet.</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  {currentQuizTopic ? 'Current quiz topic trend' : 'Recent quiz topic changes'}
-                </p>
-                <div className="mt-3 text-sm text-slate-700 dark:text-slate-300">
-                  {currentQuizTopic ? (
-                    currentQuizTrend && Number.isFinite(currentQuizTrend?.previousAccuracy) ? (
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-slate-800 dark:text-slate-200">{currentQuizTopic}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Overall {currentQuizTrend.overallAccuracy}%
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <div className={`flex items-center justify-end gap-1 font-semibold ${getDeltaStyle(currentQuizTrend.delta)}`}>
-                            {renderDeltaIcon(currentQuizTrend.delta)}
-                            <span>{formatDelta(currentQuizTrend.delta)}</span>
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            Prev {currentQuizTrend.previousAccuracy}%
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        No prior data for {currentQuizTopic} yet.
-                      </p>
-                    )
-                  ) : recentQuizChanges.length > 0 ? (
-                    <div className="space-y-2">
-                      {recentQuizChanges.map((entry) => (
-                        <div key={entry.topic} className="flex items-center justify-between text-sm">
-                          <div>
-                            <p className="font-medium text-slate-800 dark:text-slate-200">{entry.topic}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              Latest {entry.lastAccuracy ?? 0}% overall
-                            </p>
-                          </div>
-                          <div className={`flex items-center gap-1 font-semibold ${getDeltaStyle(entry.delta)}`}>
-                            {renderDeltaIcon(entry.delta)}
-                            <span>{formatDelta(entry.delta)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-500 dark:text-slate-400">No recent quiz topic changes yet.</p>
-                  )}
-                </div>
-              </div>
-            </div>
             </>
           )}
         </CardContent>

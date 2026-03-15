@@ -26,6 +26,13 @@ const ResultsPage = () => {
   const { isDevFeaturesEnabled } = useAuth();
   const { data: results, isLoading, isError } = useResults(attemptId);
   const { data: progressInsights, isLoading: isProgressInsightsLoading } = useProgressInsights();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  const handleReviewAnswers = useCallback(() => {
+    setActiveTab('review');
     window.scrollTo(0, 0);
   }, []);
 

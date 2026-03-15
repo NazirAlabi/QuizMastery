@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ChevronDown, LayoutGrid, List } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
+import { cn } from '@/lib/utils.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
 import QuizCard from '@/components/quiz/QuizCard.jsx';
@@ -28,6 +31,17 @@ const CourseDetailPage = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [startingQuizId, setStartingQuizId] = useState(null);
   const [hasShownLoadError, setHasShownLoadError] = useState(false);
+  const [selectedTopicFilters, setSelectedTopicFilters] = useState([]);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('responsive'); // 'responsive' or 'grid-2'
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const { data: course, isLoading, isError } = useCourse(id);
   const startAttemptMutation = useStartAttempt();
   const location = useLocation();
@@ -58,6 +72,71 @@ const CourseDetailPage = () => {
     () => (Array.isArray(course?.quizzes) ? course.quizzes.length : 0),
     [course]
   );
+
+  useEffect(() => {
+    if (linkedQuizCount > 10) {
+      setViewMode('grid-2');
+    }
+  }, [linkedQuizCount]);
+
+  const availableTopics = useMemo(() => {
+    if (!course?.quizzes) return [];
+    const topics = new Set();
+    course.quizzes.forEach((quiz) => {
+      if (quiz.topic) topics.add(quiz.topic);
+    });
+    return Array.from(topics).sort();
+  }, [course]);
+
+  const toggleTopicFilter = useCallback((topic) => {
+    setSelectedTopicFilters((prev) => {
+      if (prev.includes(topic)) {
+        return prev.filter((t) => t !== topic);
+      }
+      return [...prev, topic];
+    });
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setSelectedTopicFilters([]);
+  }, []);
+
+  const filteredQuizzes = useMemo(() => {
+    if (!course?.quizzes) return [];
+    if (selectedTopicFilters.length === 0) return course.quizzes;
+    return course.quizzes.filter((quiz) => selectedTopicFilters.includes(quiz.topic));
+  }, [course, selectedTopicFilters]);
+
+  const quizzesByTopic = useMemo(() => {
+    const grouped = {};
+    filteredQuizzes.forEach((quiz) => {
+      const topic = quiz.topic || 'General';
+      if (!grouped[topic]) grouped[topic] = new Map();
+      
+      const titleKey = String(quiz.title || '').trim().toLowerCase();
+      if (!grouped[topic].has(titleKey)) {
+        grouped[topic].set(titleKey, []);
+      }
+      grouped[topic].get(titleKey).push(quiz);
+    });
+
+    // Convert Maps to sorted arrays of grouped variations
+    const finalGrouped = {};
+    Object.entries(grouped).forEach(([topic, titleGroups]) => {
+      finalGrouped[topic] = Array.from(titleGroups.values()).map(variations => {
+        const sorted = [...variations].sort((a, b) => {
+          const diffs = { beginner: 1, intermediate: 2, advanced: 3 };
+          return (diffs[a.difficulty] || 99) - (diffs[b.difficulty] || 99);
+        });
+        return {
+          ...sorted[0],
+          allVariations: sorted
+        };
+      }).sort((a, b) => a.title.localeCompare(b.title));
+    });
+    
+    return finalGrouped;
+  }, [filteredQuizzes]);
 
   const handleStartQuiz = useCallback(
     async (quiz) => {
@@ -164,25 +243,124 @@ const CourseDetailPage = () => {
             </Card>
           </div>
 
-          {course.quizzes.length === 0 ? (
+          {windowWidth < 768 && linkedQuizCount > 2 && (
+            <div className="flex justify-end mb-4">
+              <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                <Button
+                  size="sm"
+                  variant={viewMode === 'responsive' ? 'secondary' : 'ghost'}
+                  onClick={() => setViewMode('responsive')}
+                  className="gap-2"
+                >
+                  <List className="h-4 w-4" />
+                  Default
+                </Button>
+                <Button
+                  size="sm"
+                  variant={viewMode === 'grid-2' ? 'secondary' : 'ghost'}
+                  onClick={() => setViewMode('grid-2')}
+                  className="gap-2"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                  Grid (2x)
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {availableTopics.length > 0 && (
+            <Card className="mb-6">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Filter by topics
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    type="button"
+                    onClick={() => setIsMobileFiltersOpen((previous) => !previous)}
+                    className="md:hidden h-8"
+                    aria-expanded={isMobileFiltersOpen}
+                  >
+                    {isMobileFiltersOpen ? 'Hide' : 'Show'}
+                    <ChevronDown
+                      className={cn(
+                        'ml-2 h-4 w-4 transition-transform',
+                        isMobileFiltersOpen && 'rotate-180'
+                      )}
+                    />
+                  </Button>
+                </div>
+                <div className={cn('mt-3', isMobileFiltersOpen ? 'block' : 'hidden', 'md:block')}>
+                  <div className="flex flex-wrap items-center gap-2 md:flex-nowrap md:overflow-x-auto md:pb-1">
+                    {availableTopics.map((topic) => {
+                      const isSelected = selectedTopicFilters.includes(topic);
+                      return (
+                        <Button
+                          key={topic}
+                          size="sm"
+                          variant={isSelected ? 'default' : 'outline'}
+                          onClick={() => toggleTopicFilter(topic)}
+                          className="h-8 md:flex-shrink-0"
+                        >
+                          {topic} (
+                          {course.quizzes.filter((q) => q.topic === topic).length})
+                        </Button>
+                      );
+                    })}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={clearFilters}
+                      disabled={selectedTopicFilters.length === 0}
+                      className="h-8 md:flex-shrink-0"
+                    >
+                      Clear all filters
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {filteredQuizzes.length === 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">No quizzes linked yet</CardTitle>
-                <CardDescription>This course currently has no active quizzes.</CardDescription>
+                <CardTitle className="text-lg">No quizzes match filters</CardTitle>
+                <CardDescription>Try clearing your filters to see more results.</CardDescription>
               </CardHeader>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-              {course.quizzes.map((quiz) => (
-                <QuizCard
-                  key={quiz.id}
-                  quiz={quiz}
-                  onStart={handleStartQuiz}
-                  isStarting={startingQuizId === quiz.id}
-                  isDevFeaturesEnabled={isDevFeaturesEnabled}
-                  startLabel={getStartLabel(quiz)}
-                  fullWidthButton
-                />
+            <div className="space-y-10">
+              {Object.entries(quizzesByTopic).map(([topic, topicQuizzes]) => (
+                <section key={topic} className="space-y-4">
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white border-b pb-2">
+                    {topic}
+                  </h3>
+                  <div
+                    className={cn(
+                      'grid gap-4 md:gap-6',
+                      viewMode === 'grid-2'
+                        ? 'grid-cols-2'
+                        : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                    )}
+                  >
+                    {topicQuizzes.map((quiz) => (
+                      <QuizCard
+                        key={quiz.id}
+                        quiz={quiz}
+                        variations={quiz.allVariations}
+                        onStart={handleStartQuiz}
+                        isStarting={startingQuizId === quiz.id}
+                        isDevFeaturesEnabled={isDevFeaturesEnabled}
+                        startLabel={getStartLabel(quiz)}
+                        fullWidthButton
+                        isGrid={viewMode === 'grid-2'}
+                      />
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
           )}

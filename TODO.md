@@ -1,15 +1,12 @@
 **Now**
-Refactor the toaster to not display the firestore messages directly as texts, and instead display information useful to the user like wrong credentials or bad network, retry
-
-
-
-
+remove the wallpaper alternatetor button from mobile altogether for now
+On md screens move the question navigator to the right side of the question card.
 **Soon**
 Decide on how stats from past quiz trials are saved, analyzed, and displayed.
 
 
-
 **Eventually**
+
 Modify the search function to also backcheck against course names so if a course name or part of it is typed, it's associated quizzes will be shown. But make that search as 'lazy' as possible so it only happens after the normal results have been collected and shown
 
 Add a bad network view if loading quizzes or anything else fails due to internet connection
@@ -23,6 +20,31 @@ Make the quiz cards more responsive
 
 
 **Done**
+To prevent complications with the attempts history. just make the function there display any available attempts with fallbacks for problematic errors to avoid breaking the app flow and avoid destructive error toasts and instead add a button somewhere relevant in dev mode to clear all attempts still labeled as in progress from over an hour ago or any other criteria that will be imposed later. You can add it to the users page.
+
+Instead of redirecting the user to the whole review page let each attempt card just be an accordion button that expands to show the percentage of questions gotten wrong, the distributions across skill, topic and difficulty, and the time information(how much time it took or how much time they used versus the time allocated and  multiplier used if any.
+Also, any attempts that seem to be 'In progress' from over an hour ago should just be assumed to have some error and should be deleted from the records after displaying the valid ones.
+
+Change the insights page to a general Progress and History page to view any past attempts and get insights across quizzes by topics, difficulty and skills
+
+Create a feature to copy the prompt like the one used to create a new quiz by upload entirely by json for the quiz variation prompt generation by selecting the desired difficulty and injecting that along with the current json and difficulty and allowing the user to copy with a button. 
+It should only show after the user clicks the button to create a difficulty variation
+Also update both of the prompt templates being used to match the current contents of the relevant text files
+
+1. Refactor the courses page to only show the first six courses on md and the first four on all screens below md. 2. Then add a link after the displayed courses to navigate to the course details page for that course
+3. In the course details page below the topic, course code and linked quizzes count and above the quiz cards, add a filter area exactly like the one in the course page that displays the quiz topics and groups by them instead.
+4. Add a toggle in the courses page, above the filter bar, to display the quizzes in a grid with two columns to show more at once or display them as they are currently(one column)
+4.In bulk edit quiz, when an existing quiz is selected, include an option to create new difficulty variation that produces the current quiz question json in a field to be copied, made easier or harder to fit the new variation's difficulty level, and pasted back, and has a difficulty field to set the difficulty of the new variation.
+5. Then when create from upload is clicked, a new quiz object should be created with all the same information just with the new question list and difficulty assignment.
+6.Before creation, a check should be made to compare the new question list to the old one and terminate the process if they are exactly the same
+7.Also check and confirm the difficulty variants will not be flagged as duplicates by the remove duplicate functions and cleared when they are run.
+6.Then for quizzes with different difficulty variations, the difficulty badge, with the same design, should be a dropdown to select difficulty from the available variations before selecting start quiz, and the difficulty should still be customizable in the quiz ready page.
+
+Refactor the toaster to not display the firestore messages directly as texts, and instead display information useful to the user like wrong credentials or bad network, retry
+
+The 'signed in as...' UI shouldn't show when not logged in as any user yet. When logged in as a registered user, it should be "signed in as *email*". If registered but with no email somehow, it shouldn't show at all. When using a guest profile it should just be "Guest", no signed in.
+The greeting should just be without a name in the absence of one. Therefore the comma should be moved into the conditional so if it fails, there'll be no comma
+
 Edit the guest identifier logic in dev tools users page to fit the current plan
 Add a users schema in the schemas folder in a similar format as the other schemas to outline the structure of a users object, be it registered or guest
 Write a temporary script to remove all previous guest user objects of the lasty structure (with guest identifier and all that)

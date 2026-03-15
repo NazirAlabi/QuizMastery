@@ -89,8 +89,9 @@ const QuizPage = () => {
       </Helmet>
 
       <div className="min-h-screen">
-        <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
-        <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        {/* TODO: Make a simplistic Navbar version for this page without links to other pages and just a settings button */}
+        {/* <Navbar onOpenSettings={() => setIsSettingsOpen(true)} /> */}
+        {/* <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} /> */}
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-12">
           <div className="mb-4 md:mb-8">

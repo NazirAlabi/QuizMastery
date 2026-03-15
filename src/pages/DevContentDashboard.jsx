@@ -54,6 +54,12 @@ const QUIZ_DEFAULTS = {
   courseIds: '',
 };
 
+const QUIZ_DIFFICULTY_LABELS = {
+  1: 'beginner',
+  2: 'intermediate',
+  3: 'advanced',
+};
+
 const QUESTION_DEFAULTS = {
   type: 'mcq',
   question_text: '',
@@ -220,19 +226,19 @@ The platform fully supports LaTeX math rendering. Use $...$ for inline math and 
 
 For example:
 
-\Delta must be written as \\Delta
+\\Delta must be written as \\\\Delta
 
-\int → \\int
+\\int → \\\\int
 
-\sum → \\sum
+\\sum → \\\\sum
 
-\rightarrow → \\rightarrow
+\\rightarrow → \\\\rightarrow
 
-\frac{1}{2} → \\frac{1}{2}
+\\frac{1}{2} → \\\\frac{1}{2}
 
-\ln → \\ln
+\\ln → \\\\ln
 
-\log → \\log
+\\log → \\\\log
 
 Failure to double the backslashes will result in an "invalid escape character" error and the JSON will be rejected. Always verify that every LaTeX command in your JSON strings uses double backslashes.
 
@@ -276,7 +282,7 @@ COUNT: Generate exactly [estimated_questions] questions as specified in the quiz
 VALIDATION CHECKLIST (for your internal use)
 JSON is valid and properly formatted (no trailing commas, all strings properly quoted)
 
-All backslashes in LaTeX are doubled (e.g., \\Delta, \\int, \\sum, \\rightarrow, \\frac)
+All backslashes in LaTeX are doubled (e.g., \\\\Delta, \\\\int, \\\\sum, \\\\rightarrow, \\\\frac)
 
 Correct number of questions generated
 
@@ -303,6 +309,144 @@ LaTeX is used where appropriate
 Title is descriptive and derived from the description
 
 estimatedTime is a reasoned estimate (not a mechanical calculation) and is a whole number of minutes`;
+
+const QUIZ_VARIATION_GENERATION_PROMPT_TEMPLATE = `Generate a quiz question set based on the following quiz description:
+
+[INSERT QUIZ DESCRIPTION HERE]
+
+Return only one valid JSON object with this structure:
+
+{
+  "title": "string",
+  "estimatedTime": 12,
+  "questions": [
+    {
+      "type": "mcq | short_answer | numeric",
+      "question_text": "string",
+      "metadata": {},
+      "difficulty": 1,
+      "topic": "concise topic identifier",
+      "skillCategory": 1,
+      "explanation": "brief explanation"
+    }
+  ]
+}
+
+Do not include any extra text, markdown, or code fences. No additional keys are allowed anywhere in the output.
+
+INTERNAL TASK
+1) Create the full quiz first.
+2) Then estimate the completion time in whole minutes at a reasonably quick but attentive pace. Use judgment, not a fixed formula. The estimate should be a realistic lower-end estimate based on question count, type mix, and difficulty.
+
+QUESTION COUNT
+Generate exactly [estimated_questions] questions.
+
+TITLE
+- The title must be concise and descriptive.
+- If the quiz description includes a Topic: line, derive the title from it.
+- Otherwise create a short title from the description.
+
+COVERAGE
+- Cover all focus topics explicitly stated in the quiz description.
+- Do not omit any stated topic.
+- Use each question’s topic field as a concise 1–3 word identifier that clearly maps to one focus topic.
+- Do not invent new topics unless needed to make the label concise.
+
+QUESTION TYPES
+- Use MCQ and numeric as the primary types.
+- Use short_answer sparingly, only when the expected answer is short and robust (usually 1–2 words or a short phrase).
+- Do not include long-answer questions.
+- The quiz may consist entirely of MCQ and numeric questions if that fits the content best.
+
+METADATA FORMATS
+
+MCQ:
+{
+  "options": [
+    { "id": "A", "text": "option text" },
+    { "id": "B", "text": "option text" },
+    { "id": "C", "text": "option text" },
+    { "id": "D", "text": "option text" }
+  ],
+  "correct_answer": "A"
+}
+
+Rules:
+- Exactly 4 options.
+- Options must be labeled A, B, C, D in order.
+- Exactly one correct answer.
+- Distractors must be plausible.
+
+Short answer:
+{
+  "accepted_answers": ["answer1", "alternate phrasing", "another acceptable answer"],
+  "case_sensitive": false,
+  "ignore_whitespace": true
+}
+
+Numeric:
+{
+  "numeric_answer": 123.45,
+  "tolerance": 0.01
+}
+
+Rules:
+- numeric_answer must be a number, not a string.
+- Include tolerance when an approximation is acceptable.
+- Omit tolerance only when the answer must be exact.
+
+LATEX
+- Use $...$ for inline math and $$...$$ for display math.
+- Because the output must be valid JSON, every backslash in LaTeX must be escaped with a double backslash.
+- Examples: \\\\Delta -> \\\\\\\\Delta, \\\\int -> \\\\\\\\int, \\\\sum -> \\\\\\\\sum, \\\\rightarrow -> \\\\\\\\rightarrow, \\\\frac{1}{2} -> \\\\\\\\frac{1}{2}
+
+DIFFICULTY
+Use this scale:
+- 1 = basic recall, definitions, straightforward calculations
+- 2 = conceptual understanding, multi-step reasoning, application of principles
+- 3 = complex synthesis, analysis, integration of multiple concepts, challenging problem-solving
+
+Match difficulty to the actual cognitive demand of each question.
+
+SKILL CATEGORY
+- 1 = Recall
+- 2 = Conceptual
+- 3 = Application
+
+Use the category that best matches the question.
+
+ORDERING
+- Arrange questions in a sensible topic order.
+- If possible, move generally from easier to harder, but this is optional.
+
+QUALITY RULES
+- Questions must be original, educationally sound, and factually correct.
+- Explanations must be brief, clear, and accurate.
+- MCQ distractors should be believable.
+- All questions should be distinct.
+
+ESTIMATED TIME
+- Return estimatedTime as a whole number of minutes.
+- Base it on judgment, not a strict formula.
+- Use a realistic lower-end estimate for an attentive learner.
+
+FINAL CHECK
+Before outputting, ensure:
+- the JSON is valid
+- no trailing commas
+- exactly [estimated_questions] questions are included
+- all focus topics are covered
+- no long-answer questions are included
+- short_answer is used sparingly
+- MCQ options are plausible and correctly keyed
+- numeric answers include appropriate tolerance
+- difficulty and skillCategory are consistent
+- topic labels are concise and semantically aligned
+- LaTeX backslashes are escaped correctly
+- title is concise and derived from the description
+- estimatedTime is a whole number
+
+Now generate the quiz JSON object.`;
 
 const BULK_UPLOAD_TEMPLATE = '{\n  "questions": []\n}';
 
@@ -438,6 +582,8 @@ const DevContentDashboard = () => {
     courseShort: false,
     courseLong: false,
   });
+  const [showVariationPromptOptions, setShowVariationPromptOptions] = useState(false);
+  const [targetVariationDifficulty, setTargetVariationDifficulty] = useState(2);
 
   const selectedCourse = useMemo(
     () => courses.find((course) => course.id === selectedCourseId) || null,
@@ -481,6 +627,28 @@ const DevContentDashboard = () => {
       ),
     [questions]
   );
+
+const groupedQuizzes = useMemo(() => {
+  const groups = new Map();
+  quizzes.forEach((quiz) => {
+    const key = `${String(quiz.title || '').trim().toLowerCase()}|${String(quiz.topic || 'General').trim().toLowerCase()}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        title: quiz.title,
+        topic: quiz.topic || 'General',
+        variations: [],
+      });
+    }
+    groups.get(key).variations.push(quiz);
+  });
+  
+  return Array.from(groups.values())
+    .map(group => ({
+      ...group,
+      variations: group.variations.sort((a, b) => Number(a.difficulty) - Number(b.difficulty))
+    }))
+    .sort((a, b) => compareAlphabetically(a.title, b.title));
+}, [quizzes]);
   const visibleSortedCourses = useMemo(
     () => sortedCourses.slice(0, visibleCourseCount),
     [sortedCourses, visibleCourseCount]
@@ -924,18 +1092,32 @@ const DevContentDashboard = () => {
         successTitle: 'Quiz updated',
       },
       async () => {
-        await updateAdminQuiz(selectedQuizId, {
-          title: quizForm.title,
-          shortDescription: quizForm.shortDescription,
-          longDescription: quizForm.longDescription,
-          topic: quizForm.topic,
-          difficulty: Number(quizForm.difficulty),
-          estimatedTime: Number(quizForm.estimatedTime),
-          isTimePerQuestion: Boolean(quizForm.isTimePerQuestion),
-          questionIds: Array.isArray(selectedQuiz?.questionIds) ? selectedQuiz.questionIds : [],
-          isArchived: Boolean(quizForm.isArchived),
-        });
-        await syncQuizCourseAssociations(selectedQuizId, quizLinkedCourseIds);
+        const variations = quizzes.filter(q => 
+          String(q.title || '').trim().toLowerCase() === String(selectedQuiz.title || '').trim().toLowerCase() && 
+          String(q.topic || 'General').trim().toLowerCase() === String(selectedQuiz.topic || 'General').trim().toLowerCase()
+        );
+
+        for (const quizToUpdate of variations) {
+          const isTarget = quizToUpdate.id === selectedQuizId;
+          
+          await updateAdminQuiz(quizToUpdate.id, {
+            title: quizForm.title,
+            shortDescription: quizForm.shortDescription,
+            longDescription: quizForm.longDescription,
+            topic: quizForm.topic,
+            // Only update difficulty and questions for the active variation
+            difficulty: isTarget ? Number(quizForm.difficulty) : Number(quizToUpdate.difficulty),
+            estimatedTime: isTarget ? Number(quizForm.estimatedTime) : Number(quizToUpdate.estimatedTime),
+            isTimePerQuestion: isTarget ? Boolean(quizForm.isTimePerQuestion) : Boolean(quizToUpdate.isTimePerQuestion),
+            questionIds: isTarget 
+              ? (Array.isArray(selectedQuiz?.questionIds) ? selectedQuiz.questionIds : [])
+              : (Array.isArray(quizToUpdate.questionIds) ? quizToUpdate.questionIds : []),
+            isArchived: isTarget ? Boolean(quizForm.isArchived) : Boolean(quizToUpdate.isArchived),
+          });
+          
+          // Sync course associations for all variations
+          await syncQuizCourseAssociations(quizToUpdate.id, quizLinkedCourseIds);
+        }
       }
     );
   };
@@ -1127,6 +1309,73 @@ const DevContentDashboard = () => {
     }
   };
 
+  const handleCopyVariationPrompt = async () => {
+    const currentDifficultyLabel = QUIZ_DIFFICULTY_LABELS[bulkForm.difficulty] || 'intermediate';
+    const targetDifficultyLabel = QUIZ_DIFFICULTY_LABELS[targetVariationDifficulty] || 'intermediate';
+    
+    const contextHeader = `I want to create a new difficulty variation of the following quiz.
+Current Difficulty: ${currentDifficultyLabel}
+Target Difficulty: ${targetDifficultyLabel}
+
+Original Quiz JSON:
+${bulkForm.uploadText}
+
+Please use the structure below to generate the new variation. Maintain the same title and topic but adjust the questions to match the target difficulty.
+`;
+
+    const generatedPrompt = QUIZ_VARIATION_GENERATION_PROMPT_TEMPLATE.replace(
+      '[INSERT QUIZ DESCRIPTION HERE]',
+      contextHeader
+    ).replace('[estimated_questions]', (parseResilientJSON(bulkForm.uploadText)?.questions?.length || 10).toString());
+
+    try {
+      await navigator.clipboard.writeText(generatedPrompt);
+      toast({
+        title: 'Variation Prompt Copied!',
+        description: `Prompt for ${targetDifficultyLabel} difficulty has been copied.`,
+      });
+    } catch (err) {
+      toast({
+        title: 'Copy failed',
+        description: 'Could not write to clipboard.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCopyJson = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({
+        title: 'JSON Copied!',
+        description: 'The content has been copied to your clipboard.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Copy failed',
+        description: 'Could not write to clipboard.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCreateNewVariation = () => {
+    setShowVariationPromptOptions(true);
+    setTargetVariationDifficulty(2);
+    
+    setBulkForm(prev => ({
+      ...prev,
+      selectedQuizId: ''
+    }));
+    
+    setBulkUploadMode('manual');
+    
+    toast({
+      title: 'Ready for New Variation',
+      description: 'The ID has been cleared. Review the JSON and select a new difficulty, then click "Create from Upload".',
+    });
+  };
+
   const handleBulkQuestionUploadFile = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1141,6 +1390,7 @@ const DevContentDashboard = () => {
       setBulkLinkedCourseIds([]);
       setBulkCourseToAddId('');
       setBulkUploadMode('manual');
+      setShowVariationPromptOptions(false);
       return;
     }
 
@@ -1178,6 +1428,7 @@ const DevContentDashboard = () => {
     });
     setBulkLinkedCourseIds(linkedCourseIds);
     setBulkCourseToAddId('');
+    setShowVariationPromptOptions(false);
 
     if (mappedQuestions.length !== sourceQuestionIds.length) {
       toast({
@@ -1185,6 +1436,28 @@ const DevContentDashboard = () => {
         description: 'Only available questions were generated in the JSON editor.',
         variant: 'destructive',
       });
+    }
+  };
+
+  const parseResilientJSON = (jsonString) => {
+    try {
+      return JSON.parse(jsonString);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        try {
+          const fixedString = jsonString.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
+          const parsed = JSON.parse(fixedString);
+          toast({
+            title: 'JSON Auto-fixed',
+            description: 'Invalid escape characters (like unescaped LaTeX backslashes) were found and automatically corrected. Proceeding...',
+          });
+          return parsed;
+        } catch (innerError) {
+          // If the fix didn't work, throw the original error
+          throw error;
+        }
+      }
+      throw error;
     }
   };
 
@@ -1196,27 +1469,6 @@ const DevContentDashboard = () => {
         successTitle: bulkForm.selectedQuizId ? 'Bulk quiz edits applied' : 'Bulk quiz created',
       },
       async () => {
-        const parseResilientJSON = (jsonString) => {
-          try {
-            return JSON.parse(jsonString);
-          } catch (error) {
-            if (error instanceof SyntaxError) {
-              try {
-                const fixedString = jsonString.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
-                const parsed = JSON.parse(fixedString);
-                toast({
-                  title: 'JSON Auto-fixed',
-                  description: 'Invalid escape characters (like unescaped LaTeX backslashes) were found and automatically corrected. Proceeding...',
-                });
-                return parsed;
-              } catch (innerError) {
-                // If the fix didn't work, throw the original error
-                throw error;
-              }
-            }
-            throw error;
-          }
-        };
 
         const uploadPayload = parseResilientJSON(bulkForm.uploadText);
         const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
@@ -1282,42 +1534,62 @@ const DevContentDashboard = () => {
           return;
         }
 
-        const selectedQuizForBulk = quizzes.find((entry) => entry.id === bulkForm.selectedQuizId);
-        if (!selectedQuizForBulk) {
-          throw new Error('Selected quiz was not found');
-        }
+        const variations = quizzes.filter(q => 
+          String(q.title || '').trim().toLowerCase() === String(bulkForm.title || '').trim().toLowerCase() && 
+          String(q.topic || 'General').trim().toLowerCase() === String(bulkForm.topic || 'General').trim().toLowerCase()
+        );
 
-        const existingQuestionIds = Array.isArray(selectedQuizForBulk.questionIds)
-          ? selectedQuizForBulk.questionIds
-          : [];
+        for (const quizToUpdate of variations) {
+          const isTarget = quizToUpdate.id === bulkForm.selectedQuizId;
+          
+          const existingQuestionIds = Array.isArray(quizToUpdate.questionIds)
+            ? quizToUpdate.questionIds
+            : [];
 
-        if (existingQuestionIds.length !== uploadedQuestions.length) {
-          throw new Error(
-            `Question count mismatch: selected quiz has ${existingQuestionIds.length} linked questions but upload has ${uploadedQuestions.length}.`
-          );
-        }
+          if (isTarget) {
+            if (existingQuestionIds.length !== uploadedQuestions.length) {
+              throw new Error(
+                `Question count mismatch: selected quiz has ${existingQuestionIds.length} linked questions but upload has ${uploadedQuestions.length}.`
+              );
+            }
 
-        for (let index = 0; index < existingQuestionIds.length; index += 1) {
-          const questionId = existingQuestionIds[index];
-          const payload = uploadedQuestions[index];
-          await updateAdminQuestion(questionId, {
-            ...payload,
-            isArchived: Boolean(payload?.isArchived),
+            // Check for identical question lists across variations BEFORE updating
+            const currentQuestionsJson = JSON.stringify(uploadedQuestions.map(toQuestionUploadEntry));
+            const otherVariations = variations.filter(v => v.id !== quizToUpdate.id);
+            for (const v of otherVariations) {
+              const vQuestions = (Array.isArray(v.questionIds) ? v.questionIds : [])
+                .map(id => questionById.get(id))
+                .filter(Boolean)
+                .map(toQuestionUploadEntry);
+              if (JSON.stringify(vQuestions) === currentQuestionsJson) {
+                throw new Error(`A variation with this exact question list already exists (${QUIZ_DIFFICULTY_LABELS[v.difficulty]}).`);
+              }
+            }
+
+            for (let index = 0; index < existingQuestionIds.length; index += 1) {
+              const questionId = existingQuestionIds[index];
+              const payload = uploadedQuestions[index];
+              await updateAdminQuestion(questionId, {
+                ...payload,
+                isArchived: Boolean(payload?.isArchived),
+              });
+            }
+          }
+
+          await updateAdminQuiz(quizToUpdate.id, {
+            title: bulkForm.title,
+            shortDescription: bulkForm.shortDescription,
+            longDescription: bulkForm.longDescription,
+            topic: bulkForm.topic,
+            difficulty: isTarget ? Number(bulkForm.difficulty) : Number(quizToUpdate.difficulty),
+            estimatedTime: isTarget ? Number(bulkForm.estimatedTime) : Number(quizToUpdate.estimatedTime),
+            isTimePerQuestion: isTarget ? Boolean(bulkForm.isTimePerQuestion) : Boolean(quizToUpdate.isTimePerQuestion),
+            questionIds: existingQuestionIds,
+            isArchived: isTarget ? Boolean(bulkForm.isArchived || false) : Boolean(quizToUpdate.isArchived),
           });
-        }
 
-        await updateAdminQuiz(selectedQuizForBulk.id, {
-          title: bulkForm.title,
-          shortDescription: bulkForm.shortDescription,
-          longDescription: bulkForm.longDescription,
-          topic: bulkForm.topic,
-          difficulty: Number(bulkForm.difficulty),
-          estimatedTime: Number(bulkForm.estimatedTime),
-          isTimePerQuestion: Boolean(bulkForm.isTimePerQuestion),
-          questionIds: existingQuestionIds,
-          isArchived: Boolean(selectedQuizForBulk.isArchived),
-        });
-        await syncQuizCourseAssociations(selectedQuizForBulk.id, bulkLinkedCourseIds);
+          await syncQuizCourseAssociations(quizToUpdate.id, bulkLinkedCourseIds);
+        }
       }
     );
   };
@@ -1330,27 +1602,6 @@ const DevContentDashboard = () => {
         successTitle: 'Questions created from upload',
       },
       async () => {
-        const parseResilientJSON = (jsonString) => {
-          try {
-            return JSON.parse(jsonString);
-          } catch (error) {
-            if (error instanceof SyntaxError) {
-              try {
-                const fixedString = jsonString.replace(/(?<!\\)\\(?!["\\/bfnrtu])/g, '\\\\');
-                const parsed = JSON.parse(fixedString);
-                toast({
-                  title: 'JSON Auto-fixed',
-                  description: 'Invalid escape characters (like unescaped LaTeX backslashes) were found and automatically corrected. Proceeding...',
-                });
-                return parsed;
-              } catch (innerError) {
-                throw error;
-              }
-            }
-            throw error;
-          }
-        };
-
         const uploadPayload = parseResilientJSON(bulkQuestionForm.uploadText);
         const uploadedQuestions = normalizeQuestionUploadPayload(uploadPayload);
 
@@ -1909,10 +2160,14 @@ Return only the description text.`;
                           onChange={(event) => setSelectedQuizId(event.target.value)}
                         >
                           <option value="">Create new quiz</option>
-                          {visibleSortedQuizzes.map((quiz) => (
-                            <option key={quiz.id} value={quiz.id}>
-                              {quiz.title} ({quiz.id}) {quiz.isArchived ? '[archived]' : ''}
-                            </option>
+                          {groupedQuizzes.map((group) => (
+                            <optgroup key={`${group.title}-${group.topic}`} label={`${group.title} (${group.topic})`}>
+                              {group.variations.map(quiz => (
+                                <option key={quiz.id} value={quiz.id}>
+                                  {QUIZ_DIFFICULTY_LABELS[quiz.difficulty] || quiz.difficulty} - {quiz.id} {quiz.isArchived ? '[archived]' : ''}
+                                </option>
+                              ))}
+                            </optgroup>
                           ))}
                         </select>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -2391,10 +2646,14 @@ Return only the description text.`;
                           onChange={(event) => handleSelectBulkQuiz(event.target.value)}
                         >
                           <option value="">Create new quiz from upload</option>
-                          {visibleSortedQuizzes.map((quiz) => (
-                            <option key={quiz.id} value={quiz.id}>
-                              {quiz.title} ({quiz.id}) {quiz.isArchived ? '[archived]' : ''}
-                            </option>
+                          {groupedQuizzes.map((group) => (
+                            <optgroup key={`bulk-${group.title}-${group.topic}`} label={`${group.title} (${group.topic})`}>
+                              {group.variations.map(quiz => (
+                                <option key={quiz.id} value={quiz.id}>
+                                  {QUIZ_DIFFICULTY_LABELS[quiz.difficulty] || quiz.difficulty} - {quiz.id} {quiz.isArchived ? '[archived]' : ''}
+                                </option>
+                              ))}
+                            </optgroup>
                           ))}
                         </select>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -2521,6 +2780,60 @@ Return only the description text.`;
                             <Label>Estimated time (minutes) <span className="text-slate-400 font-normal text-xs ml-1">(Optional)</span></Label>
                             <Input type="number" min="1" value={bulkForm.estimatedTime} onChange={(event) => setBulkForm((v) => ({ ...v, estimatedTime: Number(event.target.value) }))} />
                           </div>
+                          {bulkForm.selectedQuizId && (
+                            <div className="md:col-span-2">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={handleCreateNewVariation}
+                                className="w-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
+                              >
+                                <Plus className="h-4 w-4 mr-2" />
+                                Create New Difficulty Variation
+                              </Button>
+                              <p className="mt-1 text-[10px] text-slate-500 text-center">
+                                This will populate a new quiz with these questions. Change difficulty and JSON before upload.
+                              </p>
+                            </div>
+                          )}
+                          
+                          {showVariationPromptOptions && !bulkForm.selectedQuizId && (
+                            <div className="mt-4 p-4 border rounded-lg bg-slate-50 dark:bg-slate-900 border-amber-200 dark:border-amber-900">
+                              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                                <Plus className="h-4 w-4 text-amber-600" />
+                                Variation Prompt Generator
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                                <div className="space-y-2">
+                                  <Label>Target Difficulty</Label>
+                                  <div className="flex gap-2">
+                                    {QUIZ_DIFFICULTY_OPTIONS.map((opt) => (
+                                      <Button
+                                        key={opt.value}
+                                        type="button"
+                                        variant={targetVariationDifficulty === opt.value ? 'default' : 'outline'}
+                                        size="sm"
+                                        onClick={() => setTargetVariationDifficulty(opt.value)}
+                                        className="flex-1"
+                                      >
+                                        {opt.label}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <Button 
+                                  onClick={handleCopyVariationPrompt}
+                                  className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                                >
+                                  <Copy className="mr-2 h-4 w-4" />
+                                  Copy Variation Prompt
+                                </Button>
+                              </div>
+                              <p className="mt-3 text-xs text-muted-foreground">
+                                Select a difficulty level and copy the prompt. Paste it into your AI tool with the current quiz JSON to generate a new variation.
+                              </p>
+                            </div>
+                          )}
                           <div className="md:col-span-2">
                             <Label>Question IDs (display-only)</Label>
                             <Input
@@ -2627,9 +2940,14 @@ Return only the description text.`;
                     <div>
                       <div className="flex items-center justify-between">
                         <Label>{(!bulkForm.selectedQuizId && bulkUploadMode === 'json') ? 'Quiz JSON' : 'Questions JSON'}</Label>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => handlePasteJson(setBulkForm)} className="h-6 px-2 text-xs">
-                          <Copy className="h-3 w-3 mr-1" /> Paste from clipboard
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button type="button" variant="ghost" size="sm" onClick={() => handleCopyJson(bulkForm.uploadText)} className="h-6 px-2 text-xs">
+                            <Copy className="h-3 w-3 mr-1" /> Copy
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => handlePasteJson(setBulkForm)} className="h-6 px-2 text-xs">
+                            <Plus className="h-3 w-3 mr-1" /> Paste
+                          </Button>
+                        </div>
                       </div>
                       <textarea
                         className="mt-1 min-h-[220px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 font-mono text-xs dark:border-slate-800 dark:bg-slate-950"
@@ -2723,9 +3041,14 @@ Return only the description text.`;
                     <div>
                       <div className="flex items-center justify-between">
                         <Label>Questions JSON</Label>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => handlePasteJson(setBulkQuestionForm)} className="h-6 px-2 text-xs">
-                          <Copy className="h-3 w-3 mr-1" /> Paste from clipboard
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button type="button" variant="ghost" size="sm" onClick={() => handleCopyJson(bulkQuestionForm.uploadText)} className="h-6 px-2 text-xs">
+                            <Copy className="h-3 w-3 mr-1" /> Copy
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => handlePasteJson(setBulkQuestionForm)} className="h-6 px-2 text-xs">
+                            <Plus className="h-3 w-3 mr-1" /> Paste
+                          </Button>
+                        </div>
                       </div>
                       <textarea
                         className="mt-1 min-h-[220px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 font-mono text-xs dark:border-slate-800 dark:bg-slate-950"

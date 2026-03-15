@@ -16,7 +16,7 @@ import QuizCard from '@/components/quiz/QuizCard.jsx';
 import { queryKeys } from '@/hooks/queryKeys.js';
 import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
 import { appendReturnUrl } from '@/utils/returnUrl.js';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, LayoutGrid, List } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
@@ -27,6 +27,16 @@ const CoursesPage = () => {
   const [hasShownLoadError, setHasShownLoadError] = useState(false);
   const [expandedCourseIds, setExpandedCourseIds] = useState(new Set());
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('responsive'); // 'responsive' or 'grid-2'
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const quizLimit = useMemo(() => (windowWidth >= 768 ? 6 : 4), [windowWidth]);
 
   const toggleCourseDescription = useCallback((courseId) => {
     setExpandedCourseIds((prev) => {
@@ -134,6 +144,35 @@ const CoursesPage = () => {
     return courses.filter((course) => selectedCourseFilters.includes(course.id));
   }, [courses, selectedCourseFilters]);
 
+  const groupedCourses = useMemo(() => {
+    return visibleCourses.map(course => {
+      const groups = new Map();
+      course.quizzes.forEach(quiz => {
+        const key = `${String(quiz.title || '').trim().toLowerCase()}|${String(quiz.topic || 'General').trim().toLowerCase()}`;
+        if (!groups.has(key)) {
+          groups.set(key, []);
+        }
+        groups.get(key).push(quiz);
+      });
+      
+      const uniqueQuizzes = Array.from(groups.values()).map(variations => {
+        const sorted = [...variations].sort((a, b) => {
+          const diffs = { beginner: 1, intermediate: 2, advanced: 3 };
+          return (diffs[a.difficulty] || 99) - (diffs[b.difficulty] || 99);
+        });
+        return {
+          ...sorted[0],
+          allVariations: sorted
+        };
+      });
+      
+      return {
+        ...course,
+        groupedQuizzes: uniqueQuizzes
+      };
+    });
+  }, [visibleCourses]);
+
   const getStartLabel = useCallback(
     (quiz) => (isDevFeaturesEnabled ? `Start Quiz (${quiz.id})` : 'Start Quiz'),
     [isDevFeaturesEnabled]
@@ -192,6 +231,31 @@ const CoursesPage = () => {
             </p>
           </div>
 
+          {windowWidth < 768 && (
+            <div className="flex justify-end mb-4">
+              <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                <Button
+                  size="sm"
+                  variant={viewMode === 'responsive' ? 'secondary' : 'ghost'}
+                  onClick={() => setViewMode('responsive')}
+                  className="gap-2"
+                >
+                  <List className="h-4 w-4" />
+                  Default
+                </Button>
+                <Button
+                  size="sm"
+                  variant={viewMode === 'grid-2' ? 'secondary' : 'ghost'}
+                  onClick={() => setViewMode('grid-2')}
+                  className="gap-2"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                  Grid (2x)
+                </Button>
+              </div>
+            </div>
+          )}
+
           {courses.length > 0 && (
             <Card className="mb-6">
               <CardContent className="py-4">
@@ -248,7 +312,7 @@ const CoursesPage = () => {
           )}
 
           <div className="space-y-8">
-            {visibleCourses.map((course) => (
+            {groupedCourses.map((course) => (
               <section key={course.id} className="space-y-4 group/course">
                 <div>
                   <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -271,7 +335,7 @@ const CoursesPage = () => {
                   </button>
                 </div>
 
-                {course.quizzes.length === 0 ? (
+                {course.groupedQuizzes.length === 0 ? (
                   <Card className="max-w-md">
                     <CardHeader>
                       <CardTitle className="text-lg">No quizzes linked yet</CardTitle>
@@ -281,20 +345,44 @@ const CoursesPage = () => {
                     </CardHeader>
                   </Card>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-                    {course.quizzes.map((quiz, index) => (
-                      <QuizCard
-                        key={quiz.id}
-                        quiz={quiz}
-                        onStart={handleStartQuiz}
-                        isStarting={startingQuizId === quiz.id}
-                        isDevFeaturesEnabled={isDevFeaturesEnabled}
-                        startLabel={getStartLabel(quiz)}
-                        fullWidthButton={isDevFeaturesEnabled}
-                        defaultExpanded={index === 0}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div
+                      className={cn(
+                        'grid gap-4 md:gap-6',
+                        viewMode === 'grid-2'
+                          ? 'grid-cols-2'
+                          : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                      )}
+                    >
+                      {course.groupedQuizzes.slice(0, quizLimit).map((quiz, index) => (
+                        <QuizCard
+                          key={quiz.id}
+                          quiz={quiz}
+                          variations={quiz.allVariations}
+                          onStart={handleStartQuiz}
+                          isStarting={startingQuizId === quiz.id}
+                          isDevFeaturesEnabled={isDevFeaturesEnabled}
+                          startLabel={getStartLabel(quiz)}
+                          fullWidthButton={isDevFeaturesEnabled}
+                          defaultExpanded={index === 0}
+                          isGrid={viewMode === 'grid-2'}
+                        />
+                      ))}
+                    </div>
+                    {course.groupedQuizzes.length > quizLimit && (
+                      <div className="flex justify-center mt-4">
+                        <Button variant="outline" asChild>
+                          <Link
+                            to={`/courses/${course.id}`}
+                            onMouseEnter={() => prefetchCourse(course.id)}
+                            onFocus={() => prefetchCourse(course.id)}
+                          >
+                            View all {course.groupedQuizzes.length} unique quizzes in {course.title}
+                          </Link>
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
             ))}

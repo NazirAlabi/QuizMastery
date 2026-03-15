@@ -8,4 +8,5 @@ export const queryKeys = {
   results: (attemptId) => ['results', String(attemptId || '')],
   progressInsights: ['progress-insights'],
   adminContentSnapshot: ['admin-content-snapshot'],
+  userAttempts: ['user-attempts'],
 };

@@ -103,7 +103,7 @@ const Navbar = ({ onOpenSettings }) => {
             <Link to="/insights">
               <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
                 <LineChart className="h-4 w-4 mr-2" />
-                Insights
+                Progress & History
               </Button>
             </Link>
             {isDevFeaturesEnabled && (
@@ -319,7 +319,7 @@ const Navbar = ({ onOpenSettings }) => {
             >
               <Button variant="ghost" className="w-full justify-start text-slate-700 hover:text-indigo-700 h-12 text-base dark:text-slate-300 dark:hover:text-indigo-400">
                 <LineChart className="h-5 w-5 mr-3" />
-                Insights
+                Progress & History
               </Button>
             </Link>
             {isDevFeaturesEnabled && (

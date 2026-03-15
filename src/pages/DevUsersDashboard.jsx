@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
-import { deleteAdminGuestUsers, getAdminUsersSnapshot } from '@/api/api.js';
+import { deleteAdminGuestUsers, getAdminUsersSnapshot, cleanupStaleAttempts } from '@/api/api.js';
 import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const computeInactiveDays = (user) => {
@@ -34,6 +34,7 @@ const DevUsersDashboard = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCleaningAttempts, setIsCleaningAttempts] = useState(false);
   const [users, setUsers] = useState([]);
   const [inactiveDaysThreshold, setInactiveDaysThreshold] = useState(30);
   const [showOnlyInactiveGuests, setShowOnlyInactiveGuests] = useState(true);
@@ -68,6 +69,26 @@ const DevUsersDashboard = () => {
   if (!isDevFeaturesEnabled) {
     return <Navigate to="/courses" replace />;
   }
+
+  const handleCleanupAttempts = async () => {
+    setIsCleaningAttempts(true);
+    try {
+      // Direct API call since we are in a dev dashboard and want simple feedback
+      const result = await cleanupStaleAttempts();
+      toast({
+        title: 'Cleanup successful',
+        description: `Deleted ${result.deletedCount} stale 'in_progress' attempts (older than 1h).`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Cleanup failed',
+        description: getUserFriendlyErrorMessage(error, 'Failed to cleanup attempts.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCleaningAttempts(false);
+    }
+  };
 
   const guests = users.filter((user) => user.isGuest);
   const inactiveGuests = guests.filter((user) => computeInactiveDays(user) > Number(inactiveDaysThreshold || 0));
@@ -163,7 +184,7 @@ const DevUsersDashboard = () => {
             </div>
           ) : (
             <>
-              <div className="grid gap-4 md:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                   <CardHeader className="pb-2">
                     <CardDescription>Total users</CardDescription>
@@ -180,6 +201,22 @@ const DevUsersDashboard = () => {
                   <CardHeader className="pb-2">
                     <CardDescription>Inactive guests ({inactiveDaysThreshold}+ days)</CardDescription>
                     <CardTitle>{inactiveGuests.length}</CardTitle>
+                  </CardHeader>
+                </Card>
+                <Card className="border-indigo-100 bg-indigo-50/30 dark:border-indigo-900/50 dark:bg-indigo-950/20">
+                  <CardHeader className="pb-2">
+                    <CardDescription className="text-indigo-600 dark:text-indigo-400 font-medium">System Utilities</CardDescription>
+                    <div className="mt-1">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="w-full text-xs h-8 border-indigo-200 hover:bg-indigo-100 dark:border-indigo-800 dark:hover:bg-indigo-900/50"
+                        onClick={handleCleanupAttempts}
+                        disabled={isCleaningAttempts}
+                      >
+                        {isCleaningAttempts ? 'Cleaning...' : 'Clean Stale Attempts'}
+                      </Button>
+                    </div>
                   </CardHeader>
                 </Card>
               </div>

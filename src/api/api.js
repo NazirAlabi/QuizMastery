@@ -14,6 +14,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -1529,6 +1530,32 @@ const buildSkillBreakdown = (questions, answerByQuestionId) => {
   return buckets;
 };
 
+const buildDifficultyBreakdown = (questions, answerByQuestionId) => {
+  const buckets = {};
+
+  questions.forEach((question) => {
+    if (!isQuestionAutoGraded(question)) return;
+
+    const key = question.difficulty || 'medium';
+    if (!buckets[key]) {
+      buckets[key] = { total: 0, correct: 0, accuracy: 0 };
+    }
+
+    buckets[key].total += 1;
+    const selectedAnswer = answerByQuestionId.get(question.id) || '';
+    if (evaluateAnswer(question, selectedAnswer)) {
+      buckets[key].correct += 1;
+    }
+  });
+
+  Object.keys(buckets).forEach((key) => {
+    const value = buckets[key];
+    value.accuracy = value.total > 0 ? Math.round((value.correct / value.total) * 100) : 0;
+  });
+
+  return buckets;
+};
+
 const buildTopicBreakdown = (questions, answerByQuestionId) => {
   const topicStats = new Map();
 
@@ -1581,6 +1608,7 @@ const normalizeTopicBreakdown = (entries = []) =>
 const buildAttemptAnalysisFromQuestions = ({ orderedQuestions, answerByQuestionId, quizTopic }) => {
   const { topicBreakdown } = buildTopicBreakdown(orderedQuestions, answerByQuestionId);
   const skillBreakdown = buildSkillBreakdown(orderedQuestions, answerByQuestionId);
+  const difficultyBreakdown = buildDifficultyBreakdown(orderedQuestions, answerByQuestionId);
   const autoGradedQuestions = orderedQuestions.filter((question) => isQuestionAutoGraded(question));
   const correctAnswers = autoGradedQuestions.reduce((total, question) => {
     const userAnswer = answerByQuestionId.get(question.id) || '';
@@ -1596,6 +1624,7 @@ const buildAttemptAnalysisFromQuestions = ({ orderedQuestions, answerByQuestionI
     totalQuestions,
     quizTopic: String(quizTopic || '').trim() || 'General',
     skillBreakdown,
+    difficultyBreakdown,
   };
 };
 
@@ -1622,6 +1651,10 @@ const resolveAttemptAnalysis = async (attempt, userId) => {
         storedAnalysis?.skillBreakdown && typeof storedAnalysis.skillBreakdown === 'object'
           ? storedAnalysis.skillBreakdown
           : null,
+      difficultyBreakdown:
+        storedAnalysis?.difficultyBreakdown && typeof storedAnalysis.difficultyBreakdown === 'object'
+          ? storedAnalysis.difficultyBreakdown
+          : null,
     };
   }
 
@@ -1636,6 +1669,7 @@ const resolveAttemptAnalysis = async (attempt, userId) => {
       totalQuestions: 0,
       quizTopic: resolveQuizTopic(quiz),
       skillBreakdown: {},
+      difficultyBreakdown: {},
     };
   }
 
@@ -1798,6 +1832,99 @@ export const getResults = async (attemptId) => {
   };
 };
 
+export const deleteAttempt = async (attemptId) => {
+  const { userId } = getCurrentSessionIdentity();
+  const attempt = await attemptRepository.getAttemptById(attemptId);
+  if (!attempt) return;
+  if (attempt.userId !== userId) {
+    throw new Error('You can only delete your own attempts');
+  }
+  await attemptRepository.deleteAttempt(attemptId);
+};
+
+export const getUserAttempts = async () => {
+  try {
+    const { userId } = getCurrentSessionIdentity();
+
+    const attemptsSnapshot = await getDocs(
+      query(attemptsCollection, where('userId', '==', userId))
+    );
+
+    const enrichedAttempts = [];
+    
+    // Process attempts individually with try/catch to ensure one failure doesn't break the whole list
+    for (const docSnap of attemptsSnapshot.docs) {
+      try {
+        const data = docSnap.data();
+        if (!data || !data.quizId) {
+          console.warn('Skipping malformed attempt document:', docSnap.id);
+          continue;
+        }
+
+        const quiz = await quizRepository.getQuizById(data.quizId).catch(err => {
+          console.warn(`Failed to fetch quiz ${data.quizId} for attempt ${docSnap.id}:`, err);
+          return null;
+        });
+        
+        // Enrich with analysis for accordion view
+        let analysis = null;
+        if (data.status === 'submitted') {
+          try {
+            analysis = await resolveAttemptAnalysis({ id: docSnap.id, ...data }, userId);
+          } catch (e) {
+            console.warn('Failed to resolve analysis for history item:', docSnap.id, e);
+          }
+        }
+
+        enrichedAttempts.push({
+          id: docSnap.id,
+          ...data,
+          startedAt: toDate(data.startedAt)?.toISOString(),
+          submittedAt: toDate(data.submittedAt)?.toISOString(),
+          abandonedAt: toDate(data.abandonedAt)?.toISOString(),
+          quizTitle: quiz?.title || quiz?.name || 'Unknown Quiz',
+          analysis,
+        });
+      } catch (itemError) {
+        console.error('Unexpected error processing history item:', docSnap.id, itemError);
+      }
+    }
+
+    // Sort in memory to avoid index requirement
+    return enrichedAttempts.sort((a, b) => {
+      const aDate = a.startedAt ? new Date(a.startedAt) : new Date(0);
+      const bDate = b.startedAt ? new Date(b.startedAt) : new Date(0);
+      return bDate - aDate;
+    });
+  } catch (globalError) {
+    console.error('Global failure in getUserAttempts:', globalError);
+    return []; // Always return a safe default
+  }
+};
+
+export const cleanupStaleAttempts = async () => {
+  try {
+    const { userId } = getCurrentSessionIdentity();
+    const q = query(
+      attemptsCollection,
+      where('userId', '==', userId),
+      where('status', '==', 'in_progress')
+    );
+    const snapshot = await getDocs(q);
+    let deletedCount = 0;
+
+    for (const docSnap of snapshot.docs) {
+      await deleteDoc(docSnap.ref);
+      deletedCount++;
+    }
+
+    return { success: true, deletedCount };
+  } catch (error) {
+    console.error('Failed to cleanup attempts:', error);
+    throw error;
+  }
+};
+
 export const getProgressInsights = async () => {
   const { userId } = getCurrentSessionIdentity();
 
@@ -1813,6 +1940,8 @@ export const getProgressInsights = async () => {
     return {
       questionTopicSummary: [],
       quizTopicSummary: [],
+      difficultySummary: [],
+      skillSummary: [],
       totalSubmittedAttempts: 0,
     };
   }
@@ -1833,6 +1962,9 @@ export const getProgressInsights = async () => {
   }
 
   const questionTopicEntries = [];
+  const difficultyEntries = [];
+  const skillEntries = [];
+
   analysisEntries.forEach((entry) => {
     (entry.questionTopicBreakdown || []).forEach((topicEntry) => {
       questionTopicEntries.push({
@@ -1843,6 +1975,35 @@ export const getProgressInsights = async () => {
         submittedAt: entry.submittedAt,
       });
     });
+
+    // Assume we need to aggregate difficulty and skills from the analysis or the quiz itself
+    // For now, we'll try to find difficulty and skills if they are present in the analysis
+    // or if we can derive them.
+    // However, the analysis only contains topic breakdown.
+    // Let's look at skillBreakdown in analysis entries.
+    if (entry.skillBreakdown) {
+      Object.entries(entry.skillBreakdown).forEach(([skill, stats]) => {
+        skillEntries.push({
+          skill,
+          correct: stats.correct,
+          total: stats.total,
+          accuracy: stats.accuracy,
+          submittedAt: entry.submittedAt,
+        });
+      });
+    }
+
+    if (entry.difficultyBreakdown) {
+      Object.entries(entry.difficultyBreakdown).forEach(([difficulty, stats]) => {
+        difficultyEntries.push({
+          difficulty,
+          correct: stats.correct,
+          total: stats.total,
+          accuracy: stats.accuracy,
+          submittedAt: entry.submittedAt,
+        });
+      });
+    }
   });
 
   const questionTopicSummary = buildProgressSummary({
@@ -1875,12 +2036,34 @@ export const getProgressInsights = async () => {
     return a.topic.localeCompare(b.topic);
   });
 
+  const skillSummary = buildProgressSummary({
+    entries: skillEntries,
+    getTopicKey: (entry) => entry.skill,
+    getAccuracy: (entry) => entry.accuracy,
+    getCorrect: (entry) => entry.correct,
+    getTotal: (entry) => entry.total,
+  }).sort((a, b) => b.overallAccuracy - a.overallAccuracy);
+
+  const difficultySummary = buildProgressSummary({
+    entries: difficultyEntries,
+    getTopicKey: (entry) => entry.difficulty,
+    getAccuracy: (entry) => entry.accuracy,
+    getCorrect: (entry) => entry.correct,
+    getTotal: (entry) => entry.total,
+  }).sort((a, b) => {
+    const order = { easy: 1, medium: 2, hard: 3 };
+    return (order[a.topic.toLowerCase()] || 0) - (order[b.topic.toLowerCase()] || 0);
+  });
+
   return {
     questionTopicSummary,
     quizTopicSummary,
+    skillSummary,
+    difficultySummary,
     totalSubmittedAttempts,
   };
 };
+
 
 export const flagQuestion = async () => {
   return { success: true };
