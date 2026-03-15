@@ -69,6 +69,16 @@ const Register = () => {
       });
       navigate(returnUrl, { replace: true });
     } else {
+      toast({
+        title: 'Registration Failed',
+        description: result.error || 'Could not create account',
+        variant: 'destructive'
+      });
+    }
+
+    setIsLoading(false);
+  };
+  
   return (
     <>
       <Helmet>
