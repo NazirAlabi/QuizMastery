@@ -1628,6 +1628,25 @@ Please use the structure below to generate the new variation. Maintain the same 
         }
 
         if (!bulkForm.selectedQuizId) {
+
+          // --- NEW CHECK: ensure no variation with same difficulty already exists ---
+          const existingVariations = quizzes.filter(q => 
+            String(q.title || '').trim().toLowerCase() === String(finalQuizPayload.title || '').trim().toLowerCase() && 
+            String(q.topic || 'General').trim().toLowerCase() === String(finalQuizPayload.topic || 'General').trim().toLowerCase()
+          );
+          const existingWithSameDifficulty = existingVariations.find(v => v.difficulty === finalQuizPayload.difficulty);
+          if (existingWithSameDifficulty) {
+            // Use difficulty label if available, otherwise fallback to number
+            const difficultyLabel = typeof QUIZ_DIFFICULTY_LABELS !== 'undefined'
+              ? QUIZ_DIFFICULTY_LABELS[finalQuizPayload.difficulty]
+              : finalQuizPayload.difficulty;
+            throw new Error(
+              `A variation with difficulty ${difficultyLabel} already exists for this quiz. ` +
+              `Please choose a different difficulty or edit the existing variation.`
+            );
+          }
+          // --- end of new check ---
+
           const createdQuizResult = await createQuizFromQuestionUpload({
             quizPayload: finalQuizPayload,
             uploadPayload,
@@ -2012,87 +2031,169 @@ Return only the description text.`;
       return /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(text);
     };
 
-    // Helper to check if LaTeX delimiters are balanced in a string
+    // Helper to check if LaTeX delimiters are balanced
     const hasUnbalancedDelimiters = (text) => {
       if (typeof text !== 'string') return false;
+
       let inMath = false;
       let inDisplayMath = false;
       let i = 0;
+
       while (i < text.length) {
         if (text.startsWith('$$', i)) {
           if (inDisplayMath) {
-            // Closing display math
             inDisplayMath = false;
             i += 2;
           } else if (!inMath) {
-            // Opening display math
             inDisplayMath = true;
             i += 2;
           } else {
-            // Inside inline math, treat as normal text? Usually not allowed but we'll ignore.
             i++;
           }
         } else if (text[i] === '$' && !inDisplayMath) {
-          if (inMath) {
-            inMath = false;
-          } else {
-            inMath = true;
-          }
+          inMath = !inMath;
           i++;
         } else {
           i++;
         }
       }
+
       return inMath || inDisplayMath;
     };
 
-    // Helper to extract LaTeX chunks (same as before)
+    // Extract LaTeX chunks
     const extractLatexChunks = (text) => {
       if (typeof text !== 'string') return [];
       const regex = /\$\$[\s\S]+?\$\$|\$[^\$]+\$/g;
       return (text.match(regex) || []).map(chunk => chunk.trim());
     };
 
-    // Helper to test LaTeX rendering with KaTeX
+    // KaTeX validation
     const testLatex = (latex) => {
       try {
         katex.renderToString(latex, { throwOnError: true });
         return true;
-      } catch (err) {
+      } catch {
         return false;
       }
+    };
+
+    // Detect unicode backslash lookalikes
+    const hasNonStandardBackslash = (latex) => {
+      const backslashLookalikes = /[\uFF3C\u2216\u29F5\u27CD\u27CE]/;
+      return backslashLookalikes.test(latex);
+    };
+
+    // Heuristic detection for suspicious LaTeX patterns
+    const findSuspiciousLatexIssues = (latex) => {
+      const issues = [];
+      if (typeof latex !== 'string') return issues;
+
+      const cleaned = latex.trim();
+
+      // Suspicious stray backslashes
+      const strayBackslashRegex = /\\(?![A-Za-z]+|[\\{}$%&_#^~])/;
+      if (strayBackslashRegex.test(cleaned)) {
+        issues.push({
+          type: 'suspicious_escape',
+          message: 'Contains a suspicious backslash sequence that may not be a valid LaTeX command.'
+        });
+      }
+
+      // Bare command-like words missing backslash
+      const bareCommandWords = [
+        'rightarrow','leftarrow','leftrightarrow','uparrow','downarrow',
+        'cdot','times','div','mid','leq','geq','neq','approx',
+        'pm','mp','infty','partial','nabla','sqrt','frac',
+        'sum','prod','int','lim',
+        'alpha','beta','gamma','delta','epsilon','zeta','eta',
+        'theta','iota','kappa','lambda','mu','nu','xi','pi',
+        'rho','sigma','tau','phi','chi','psi','omega',
+        'sin','cos','tan','cot','sec','csc','ln','log'
+      ];
+
+      const bareWordRegex = new RegExp(
+        String.raw`(^|[^\\])\b(?:${bareCommandWords.join('|')})\b`,
+        'g'
+      );
+
+      const matches = [...cleaned.matchAll(bareWordRegex)];
+      if (matches.length > 0) {
+        const names = [...new Set(matches.map(m => m[0].replace(/^[^A-Za-z]+/, '')))].slice(0,4);
+        issues.push({
+          type: 'suspicious_command',
+          message: `Possible missing backslash before LaTeX command-like text: ${names.join(', ')}.`
+        });
+      }
+
+      // Unbalanced braces
+      const open = (cleaned.match(/{/g) || []).length;
+      const close = (cleaned.match(/}/g) || []).length;
+      if (open !== close) {
+        issues.push({
+          type: 'unbalanced_braces',
+          message: 'Unbalanced { } braces inside the LaTeX expression.'
+        });
+      }
+
+      // \left \right mismatch
+      const leftCount = (cleaned.match(/\\left\b/g) || []).length;
+      const rightCount = (cleaned.match(/\\right\b/g) || []).length;
+      if (leftCount !== rightCount) {
+        issues.push({
+          type: 'suspicious_delimiter_pair',
+          message: 'Mismatched \\left and \\right delimiters.'
+        });
+      }
+
+      // Suspicious superscripts/subscripts
+      if (/(^|[^\\])[_^](?!\{?[A-Za-z0-9\\])/g.test(cleaned)) {
+        issues.push({
+          type: 'suspicious_script',
+          message: 'Found a subscript/superscript marker that may be incomplete.'
+        });
+      }
+
+      return issues;
     };
 
     for (let i = 0; i < total; i++) {
       const question = questionsToScan[i];
       const qIndex = i + 1;
+
       const progress = Math.round((i / total) * 100);
       setLatexScanProgress(progress);
       setLatexScanStatus(`Scanning question ${qIndex} of ${total}...`);
+
       setLatexScanLogs(prev => {
         const next = [...prev, `Scanning question ${qIndex}: ${question.id}`];
         return next.slice(-12);
       });
 
-      // Collect all text fields that may contain LaTeX
       const fieldsToCheck = [
         { name: 'question_text', value: question.question_text },
         { name: 'explanation', value: question.explanation },
       ];
 
-      // Add metadata options if present
-      if (question.metadata?.options && Array.isArray(question.metadata.options)) {
+      if (question.metadata?.options) {
         question.metadata.options.forEach((opt, idx) => {
           if (opt.text) {
-            fieldsToCheck.push({ name: `option_${opt.id || idx}`, value: opt.text });
+            fieldsToCheck.push({
+              name: `option_${opt.id || idx}`,
+              value: opt.text
+            });
           }
         });
       }
 
-      // Add accepted_answers for short_answer
-      if (question.metadata?.accepted_answers && Array.isArray(question.metadata.accepted_answers)) {
+      if (question.metadata?.accepted_answers) {
         question.metadata.accepted_answers.forEach((ans, idx) => {
-          if (ans) fieldsToCheck.push({ name: `accepted_answer_${idx}`, value: ans });
+          if (ans) {
+            fieldsToCheck.push({
+              name: `accepted_answer_${idx}`,
+              value: ans
+            });
+          }
         });
       }
 
@@ -2101,16 +2202,14 @@ Return only the description text.`;
       for (const field of fieldsToCheck) {
         if (!field.value) continue;
 
-        // 1. Check for control characters
         if (hasControlChars(field.value)) {
           questionErrors.push({
             field: field.name,
             type: 'control_char',
-            message: 'Contains invisible control characters (e.g., tab, form feed).'
+            message: 'Contains invisible control characters.'
           });
         }
 
-        // 2. Check for unbalanced LaTeX delimiters
         if (hasUnbalancedDelimiters(field.value)) {
           questionErrors.push({
             field: field.name,
@@ -2119,10 +2218,13 @@ Return only the description text.`;
           });
         }
 
-        // 3. Test each LaTeX chunk with KaTeX
         const latexChunks = extractLatexChunks(field.value);
+
         for (const chunk of latexChunks) {
-          const cleanLatex = chunk.startsWith('$') ? chunk.slice(1, -1) : chunk.slice(2, -2);
+          const cleanLatex = chunk.startsWith('$$')
+            ? chunk.slice(2, -2)
+            : chunk.slice(1, -1);
+
           if (!testLatex(cleanLatex)) {
             questionErrors.push({
               field: field.name,
@@ -2131,16 +2233,33 @@ Return only the description text.`;
               message: `Invalid LaTeX: ${chunk}`
             });
           }
+
+          if (hasNonStandardBackslash(cleanLatex)) {
+            questionErrors.push({
+              field: field.name,
+              type: 'nonstandard_backslash',
+              latex: chunk,
+              message: 'Contains a non-standard backslash character. Replace with a normal \\ for LaTeX commands.'
+            });
+          }
+
+          const heuristicIssues = findSuspiciousLatexIssues(cleanLatex);
+
+          for (const issue of heuristicIssues) {
+            questionErrors.push({
+              field: field.name,
+              type: issue.type,
+              latex: chunk,
+              message: issue.message
+            });
+          }
         }
 
-        // 4. (Optional) Heuristic: warn about lone '|' inside math
-        // This is a common source of confusion – | is allowed but often should be \mid or \lvert
         if (field.value.includes('|') && /[^\\]\|[^\\]/.test(field.value)) {
-          // Only if it's inside math? This is complex. We'll just warn.
           questionErrors.push({
             field: field.name,
             type: 'heuristic',
-            message: 'Contains a pipe character (|). If used inside math, consider \\mid or \\lvert/\\rvert for proper spacing.'
+            message: 'Contains a pipe character (|). Consider \\mid or \\lvert/\\rvert inside math.'
           });
         }
       }
@@ -2151,6 +2270,7 @@ Return only the description text.`;
           questionText: question.question_text,
           errors: questionErrors,
         });
+
         setLatexScanLogs(prev => {
           const next = [...prev, `⚠️ Issues found in question ${question.id} (${questionErrors.length})`];
           return next.slice(-12);
@@ -2166,18 +2286,24 @@ Return only the description text.`;
     if (errors.length === 0) {
       setLatexScanStatus('Scan complete – no LaTeX issues found.');
       setLatexScanLogs(prev => [...prev, '✅ No issues detected.']);
+
       toast({
         title: 'Scan complete',
-        description: 'All LaTeX appears valid.',
+        description: 'All LaTeX appears valid.'
       });
     } else {
       const totalIssues = errors.reduce((sum, q) => sum + q.errors.length, 0);
-      setLatexScanStatus(`Scan complete – found ${errors.length} question(s) with ${totalIssues} issue(s).`);
+
+      setLatexScanStatus(
+        `Scan complete – found ${errors.length} question(s) with ${totalIssues} issue(s).`
+      );
+
       setLatexScanLogs(prev => [...prev, `❌ Found ${totalIssues} issue(s).`]);
+
       toast({
         title: 'LaTeX issues detected',
         description: `${errors.length} question(s) have potential problems.`,
-        variant: 'destructive',
+        variant: 'destructive'
       });
     }
   };
@@ -3630,7 +3756,7 @@ Return only the description text.`;
                                   ) : (
                                     <div className="space-y-3 p-3">
                                       <p className="text-xs font-medium text-slate-600">Question {index + 1}:</p>
-                                      <QuestionCard question={flattenQuestion(question)} selectedAnswer="" onAnswerChange={() => {}} />
+                                      <QuestionCard question={flattenQuestion(question)} selectedAnswer="" onAnswerChange={() => {}} showResult={true} />
                                     </div>
                                   )}
                                 </>
