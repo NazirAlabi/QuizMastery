@@ -26,7 +26,6 @@ const QuestionCard = ({ question, selectedAnswer, onAnswerChange, showResult = f
   const isAutoGraded = isQuestionAutoGraded(question);
   const evaluation = showResult ? evaluateAnswer(question, answerValue) : null;
   const isCorrect = evaluation === true;
-  const isWrong = evaluation === false;
   const hasSubmittedAnswer = answerValue.trim().length > 0;
   const options = Array.isArray(question?.options) ? question.options : [];
   const acceptedAnswers = Array.isArray(question?.acceptedAnswers) ? question.acceptedAnswers : [];

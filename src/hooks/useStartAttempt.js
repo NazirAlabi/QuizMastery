@@ -1,4 +1,5 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient  } from '@tanstack/react-query';
+import { queryKeys } from '@/hooks/queryKeys.js';
 import { startAttempt } from '@/api/api.js';
 
 export const useStartAttempt = () => {

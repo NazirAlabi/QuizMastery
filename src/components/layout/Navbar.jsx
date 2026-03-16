@@ -82,12 +82,12 @@ const Navbar = ({ onOpenSettings }) => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-4">
-            <Link to="/">
+            {/* <Link to="/">
               <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
                 <Home className="h-4 w-4 mr-2" />
                 Home
               </Button>
-            </Link>
+            </Link> */}
             <Link to="/quizzes">
               <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
                 <GraduationCap className="h-4 w-4 mr-2" />

@@ -4,6 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { Archive, ArchiveRestore, Loader2, Plus, Trash2, Upload, ChevronDown, Copy } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import QuestionCard from '@/components/quiz/QuestionCard';
 import { useAuth } from '@/hooks/useAuth.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -28,6 +29,8 @@ import {
   updateAdminQuestion,
   updateAdminQuiz,
 } from '@/api/api.js';
+import katex from 'katex';
+import 'katex/dist/katex.min.css'; 
 import { measureAsync } from '@/utils/performance.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
@@ -537,6 +540,60 @@ const toQuestionUploadEntry = (question) => ({
   skillCategory: Number(question?.skillCategory) || 2,
   explanation: String(question?.explanation || ''),
 });
+
+function flattenQuestion(apiQuestion) {
+  // Map numeric difficulty to string labels
+  const difficultyMap = {
+    1: 'easy',
+    2: 'medium',
+    3: 'hard'
+  };
+
+  // Base properties common to all question types
+  const base = {
+    id: apiQuestion.id,                     // optional but useful for keys
+    type: apiQuestion.type,
+    text: apiQuestion.question_text,         // rename from question_text to text
+    difficulty: difficultyMap[apiQuestion.difficulty] || 'medium',
+    topic: apiQuestion.topic || '',
+    explanation: apiQuestion.explanation,
+  };
+
+  // If no metadata, just return the base object
+  if (!apiQuestion.metadata || typeof apiQuestion.metadata !== 'object') {
+    return base;
+  }
+
+  const metadata = apiQuestion.metadata;
+
+  // Add type‑specific fields from metadata
+  switch (apiQuestion.type) {
+    case 'mcq':
+      return {
+        ...base,
+        options: Array.isArray(metadata.options) ? metadata.options : [],
+        correctAnswer: metadata.correct_answer || '',
+      };
+
+    case 'short_answer':
+      return {
+        ...base,
+        acceptedAnswers: Array.isArray(metadata.accepted_answers) ? metadata.accepted_answers : [],
+      };
+
+    case 'numeric':
+      return {
+        ...base,
+        numericAnswer: metadata.numeric_answer,
+        tolerance: metadata.tolerance,
+      };
+
+    default:
+      // For long_answer or any other type, just return base
+      return base;
+  }
+}
+
 const DEDUPE_IDLE_MESSAGE = 'Ready to scan for strict semantic duplicates.';
 const DASHBOARD_SELECT_PAGE_SIZE = 150;
 
@@ -555,6 +612,13 @@ const DevContentDashboard = () => {
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [selectedQuizId, setSelectedQuizId] = useState('');
   const [selectedQuestionId, setSelectedQuestionId] = useState('');
+  const [displayQuestions, setDisplayQuestions] = useState([]);
+  const [editDisplayedQuestions, setEditDisplayedQuestions] = useState(false);
+  const [latexScanProgress, setLatexScanProgress] = useState(0);
+  const [latexScanStatus, setLatexScanStatus] = useState('');
+  const [latexScanLogs, setLatexScanLogs] = useState([]);
+  const [latexErrorQuestions, setLatexErrorQuestions] = useState([]);
+  const [editingQuestions, setEditingQuestions] = useState({});   
   const [courseForm, setCourseForm] = useState(COURSE_DEFAULTS);
   const [quizForm, setQuizForm] = useState(QUIZ_DEFAULTS);
   const [questionForm, setQuestionForm] = useState(QUESTION_DEFAULTS);
@@ -777,6 +841,48 @@ const groupedQuizzes = useMemo(() => {
   }, [selectedCourseId]);
 
   useEffect(() => {
+    // Priority: Selected question > Selected quiz > Selected course
+    let questionsList = [];
+    setEditDisplayedQuestions(false);
+    
+    if (selectedQuestionId) {
+      // Case 1: Specific question selected
+      const question = questions.find(q => q.id === selectedQuestionId);
+      if (question) {
+        questionsList = [question];
+      }
+    } else if (selectedQuizId) {
+      // Case 2: Quiz selected - get all questions in that quiz
+      const quiz = quizzes.find(q => q.id === selectedQuizId);
+      if (quiz && Array.isArray(quiz.questionIds)) {
+        questionsList = quiz.questionIds
+          .map(id => questionById.get(id))
+          .filter(Boolean); // Remove any null/undefined
+      }
+    } else if (selectedCourseId) {
+      // Case 3: Course selected - get all questions from all quizzes in the course
+      const course = courses.find(c => c.id === selectedCourseId);
+      if (course && Array.isArray(course.quizIds)) {
+        // Get all unique question IDs from all quizzes in the course
+        const questionIdSet = new Set();
+        course.quizIds.forEach(quizId => {
+          const quiz = quizzes.find(q => q.id === quizId);
+          if (quiz && Array.isArray(quiz.questionIds)) {
+            quiz.questionIds.forEach(qId => questionIdSet.add(qId));
+          }
+        });
+        
+        // Convert IDs to question objects
+        questionsList = Array.from(questionIdSet)
+          .map(id => questionById.get(id))
+          .filter(Boolean);
+      }
+    }
+    
+    setDisplayQuestions(questionsList);
+  }, [selectedCourseId, selectedQuizId, selectedQuestionId, courses, quizzes, questionById]);
+
+  useEffect(() => {
     setBulkCourseToAddId('');
   }, [bulkForm.selectedQuizId]);
 
@@ -826,7 +932,7 @@ const groupedQuizzes = useMemo(() => {
     });
     try {
       await callback();
-      setSavingAction((previous) => ({ ...previous, progress: 96 }));
+      setSavingAction((previous) => ({ ...previous, progress: 76 }));
       await loadAllContent(false);
       await queryClient.invalidateQueries();
       setSavingAction((previous) => ({ ...previous, progress: 100 }));
@@ -1881,6 +1987,202 @@ Return only the description text.`;
     }
   };
 
+  const scanForLatexErrors = async (questionsToScan) => {
+    if (!questionsToScan || questionsToScan.length === 0) {
+      toast({
+        title: 'No questions',
+        description: 'Select a course, quiz, or question first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Reset state
+    setLatexScanProgress(0);
+    setLatexScanStatus('Starting LaTeX scan...');
+    setLatexScanLogs(['Starting LaTeX scan...']);
+    setLatexErrorQuestions([]);
+
+    const errors = [];
+    const total = questionsToScan.length;
+
+    // Helper to detect control characters (ASCII 0-31 except \n, \t, \r)
+    const hasControlChars = (text) => {
+      if (typeof text !== 'string') return false;
+      return /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(text);
+    };
+
+    // Helper to check if LaTeX delimiters are balanced in a string
+    const hasUnbalancedDelimiters = (text) => {
+      if (typeof text !== 'string') return false;
+      let inMath = false;
+      let inDisplayMath = false;
+      let i = 0;
+      while (i < text.length) {
+        if (text.startsWith('$$', i)) {
+          if (inDisplayMath) {
+            // Closing display math
+            inDisplayMath = false;
+            i += 2;
+          } else if (!inMath) {
+            // Opening display math
+            inDisplayMath = true;
+            i += 2;
+          } else {
+            // Inside inline math, treat as normal text? Usually not allowed but we'll ignore.
+            i++;
+          }
+        } else if (text[i] === '$' && !inDisplayMath) {
+          if (inMath) {
+            inMath = false;
+          } else {
+            inMath = true;
+          }
+          i++;
+        } else {
+          i++;
+        }
+      }
+      return inMath || inDisplayMath;
+    };
+
+    // Helper to extract LaTeX chunks (same as before)
+    const extractLatexChunks = (text) => {
+      if (typeof text !== 'string') return [];
+      const regex = /\$\$[\s\S]+?\$\$|\$[^\$]+\$/g;
+      return (text.match(regex) || []).map(chunk => chunk.trim());
+    };
+
+    // Helper to test LaTeX rendering with KaTeX
+    const testLatex = (latex) => {
+      try {
+        katex.renderToString(latex, { throwOnError: true });
+        return true;
+      } catch (err) {
+        return false;
+      }
+    };
+
+    for (let i = 0; i < total; i++) {
+      const question = questionsToScan[i];
+      const qIndex = i + 1;
+      const progress = Math.round((i / total) * 100);
+      setLatexScanProgress(progress);
+      setLatexScanStatus(`Scanning question ${qIndex} of ${total}...`);
+      setLatexScanLogs(prev => {
+        const next = [...prev, `Scanning question ${qIndex}: ${question.id}`];
+        return next.slice(-12);
+      });
+
+      // Collect all text fields that may contain LaTeX
+      const fieldsToCheck = [
+        { name: 'question_text', value: question.question_text },
+        { name: 'explanation', value: question.explanation },
+      ];
+
+      // Add metadata options if present
+      if (question.metadata?.options && Array.isArray(question.metadata.options)) {
+        question.metadata.options.forEach((opt, idx) => {
+          if (opt.text) {
+            fieldsToCheck.push({ name: `option_${opt.id || idx}`, value: opt.text });
+          }
+        });
+      }
+
+      // Add accepted_answers for short_answer
+      if (question.metadata?.accepted_answers && Array.isArray(question.metadata.accepted_answers)) {
+        question.metadata.accepted_answers.forEach((ans, idx) => {
+          if (ans) fieldsToCheck.push({ name: `accepted_answer_${idx}`, value: ans });
+        });
+      }
+
+      const questionErrors = [];
+
+      for (const field of fieldsToCheck) {
+        if (!field.value) continue;
+
+        // 1. Check for control characters
+        if (hasControlChars(field.value)) {
+          questionErrors.push({
+            field: field.name,
+            type: 'control_char',
+            message: 'Contains invisible control characters (e.g., tab, form feed).'
+          });
+        }
+
+        // 2. Check for unbalanced LaTeX delimiters
+        if (hasUnbalancedDelimiters(field.value)) {
+          questionErrors.push({
+            field: field.name,
+            type: 'unbalanced_delimiters',
+            message: 'Unbalanced $ or $$ delimiters.'
+          });
+        }
+
+        // 3. Test each LaTeX chunk with KaTeX
+        const latexChunks = extractLatexChunks(field.value);
+        for (const chunk of latexChunks) {
+          const cleanLatex = chunk.startsWith('$') ? chunk.slice(1, -1) : chunk.slice(2, -2);
+          if (!testLatex(cleanLatex)) {
+            questionErrors.push({
+              field: field.name,
+              type: 'katex_error',
+              latex: chunk,
+              message: `Invalid LaTeX: ${chunk}`
+            });
+          }
+        }
+
+        // 4. (Optional) Heuristic: warn about lone '|' inside math
+        // This is a common source of confusion – | is allowed but often should be \mid or \lvert
+        if (field.value.includes('|') && /[^\\]\|[^\\]/.test(field.value)) {
+          // Only if it's inside math? This is complex. We'll just warn.
+          questionErrors.push({
+            field: field.name,
+            type: 'heuristic',
+            message: 'Contains a pipe character (|). If used inside math, consider \\mid or \\lvert/\\rvert for proper spacing.'
+          });
+        }
+      }
+
+      if (questionErrors.length > 0) {
+        errors.push({
+          questionId: question.id,
+          questionText: question.question_text,
+          errors: questionErrors,
+        });
+        setLatexScanLogs(prev => {
+          const next = [...prev, `⚠️ Issues found in question ${question.id} (${questionErrors.length})`];
+          return next.slice(-12);
+        });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+
+    setLatexScanProgress(100);
+    setLatexErrorQuestions(errors);
+
+    if (errors.length === 0) {
+      setLatexScanStatus('Scan complete – no LaTeX issues found.');
+      setLatexScanLogs(prev => [...prev, '✅ No issues detected.']);
+      toast({
+        title: 'Scan complete',
+        description: 'All LaTeX appears valid.',
+      });
+    } else {
+      const totalIssues = errors.reduce((sum, q) => sum + q.errors.length, 0);
+      setLatexScanStatus(`Scan complete – found ${errors.length} question(s) with ${totalIssues} issue(s).`);
+      setLatexScanLogs(prev => [...prev, `❌ Found ${totalIssues} issue(s).`]);
+      toast({
+        title: 'LaTeX issues detected',
+        description: `${errors.length} question(s) have potential problems.`,
+        variant: 'destructive',
+      });
+    }
+  };
+   
+
   return (
     <>
       <Helmet>
@@ -1908,28 +2210,6 @@ Return only the description text.`;
             </CardHeader>
           </Card>
 
-          {isSaving ? (
-            <Card className="mb-6 border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base text-blue-900 dark:text-blue-200">Action in progress</CardTitle>
-                <CardDescription className="text-blue-800 dark:text-blue-300">
-                  {savingAction.label || 'Processing update...'}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900">
-                  <div
-                    className="h-full bg-blue-600 transition-all duration-200 dark:bg-blue-400"
-                    style={{ width: `${clampedSavingProgress}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">
-                  {Math.round(clampedSavingProgress)}%
-                </p>
-              </CardContent>
-            </Card>
-          ) : null}
-
           {isLoading ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto dark:border-indigo-400"></div>
@@ -1941,9 +2221,10 @@ Return only the description text.`;
                 <TabsTrigger value="courses">Courses</TabsTrigger>
                 <TabsTrigger value="quizzes">Quizzes</TabsTrigger>
                 <TabsTrigger value="questions">Questions</TabsTrigger>
-                <TabsTrigger value="bulk-quiz">Bulk Edit Quiz</TabsTrigger>
+                <TabsTrigger value="bulk-quiz">Bulk Edit/Create Quiz</TabsTrigger>
                 <TabsTrigger value="bulk-questions">Bulk Upload Questions</TabsTrigger>
                 <TabsTrigger value="dedupe">Bulk Remove Duplicates</TabsTrigger>
+                <TabsTrigger value='question-check'>Question Check</TabsTrigger>
               </TabsList>
 
               <TabsContent value="courses">
@@ -3102,8 +3383,373 @@ Return only the description text.`;
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              <TabsContent value="question-check">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Question Check</CardTitle>
+                    <CardDescription>Inspect Question Display and Track LaTeX Rendering Errors</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-6">
+                      {/* Selection controls */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <Label htmlFor="courseSelect">Select course</Label>
+                          <select
+                            id="courseSelect"
+                            className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                            value={selectedCourseId}
+                            onChange={(event) => {
+                              setSelectedCourseId(event.target.value);
+                              setSelectedQuizId('');
+                              setSelectedQuestionId('');
+                            }}
+                          >
+                            <option value="">Select a course</option>
+                            {visibleSortedCourses.map((course) => (
+                              <option key={course.id} value={course.id}>
+                                {course.title} ({course.id}) {course.isArchived ? '[archived]' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Showing {visibleSortedCourses.length} of {sortedCourses.length} courses.
+                          </p>
+                          {hasMoreCourses ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2"
+                              onClick={() => setVisibleCourseCount((previous) => previous + DASHBOARD_SELECT_PAGE_SIZE)}
+                            >
+                              Load more courses
+                            </Button>
+                          ) : null}
+                        </div>
+
+                        <div>
+                          <Label>Select quiz</Label>
+                          <select
+                            className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                            value={selectedQuizId}
+                            onChange={(event) => {
+                              setSelectedQuizId(event.target.value);
+                              setSelectedQuestionId('');
+                              setSelectedCourseId('');
+                            }}
+                          >
+                            <option value="">Select a quiz</option>
+                            {groupedQuizzes.map((group) => (
+                              <optgroup key={`${group.title}-${group.topic}`} label={`${group.title} (${group.topic})`}>
+                                {group.variations.map(quiz => (
+                                  <option key={quiz.id} value={quiz.id}>
+                                    {QUIZ_DIFFICULTY_LABELS[quiz.difficulty] || quiz.difficulty} - {quiz.id} {quiz.isArchived ? '[archived]' : ''}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Showing {visibleSortedQuizzes.length} of {sortedQuizzes.length} quizzes.
+                          </p>
+                          {hasMoreQuizzes ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2"
+                              onClick={() => setVisibleQuizCount((previous) => previous + DASHBOARD_SELECT_PAGE_SIZE)}
+                            >
+                              Load more quizzes
+                            </Button>
+                          ) : null}
+                        </div>
+
+                        <div>
+                          <Label>Select question</Label>
+                          <select
+                            className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                            value={selectedQuestionId}
+                            onChange={(event) => {
+                              setSelectedQuestionId(event.target.value);
+                              setSelectedCourseId('');
+                              setSelectedQuizId('');
+                            }}
+                          >
+                            <option value="">Select a question</option>
+                            {visibleSortedQuestions.map((question) => (
+                              <option key={question.id} value={question.id}>
+                                {formatQuestionLabel(question)}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Showing {visibleSortedQuestions.length} of {sortedQuestions.length} questions.
+                          </p>
+                          {hasMoreQuestions ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2"
+                              onClick={() => setVisibleQuestionCount((previous) => previous + DASHBOARD_SELECT_PAGE_SIZE)}
+                            >
+                              Load more questions
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {/* Questions Display */}
+                      <div className="mt-8">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold">
+                            Questions ({displayQuestions.length})
+                          </h3>
+                          {displayQuestions.length > 0 && (
+                            <Badge variant="outline" className="text-xs">
+                              {selectedCourseId && 'Course: ' + (courses.find(c => c.id === selectedCourseId)?.title || '')}
+                              {selectedQuizId &&  'Quiz: ' + (quizzes.find(q => q.id === selectedQuizId)?.title || '')}
+                              {selectedQuestionId && 'Single Question'}
+                            </Badge>
+                          )}
+                        </div>
+
+                        {displayQuestions.length === 0 ? (
+                          <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-lg dark:border-slate-700">
+                            <p className="text-slate-500 dark:text-slate-400">
+                              Select a course, quiz, or question to view questions
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <Button
+                              type='button'
+                              variant='default'
+                              size='sm'
+                              onClick={() => {
+                                const newEditing = {};
+                                displayQuestions.forEach(q => {
+                                  newEditing[q.id] = {
+                                    type: q.type,
+                                    question_text: q.question_text,
+                                    explanation: q.explanation || '',
+                                    metadataJson: JSON.stringify(q.metadata || {}, null, 2),
+                                    difficulty: q.difficulty,
+                                    topic: q.topic,
+                                    skillCategory: q.skillCategory,
+                                    isArchived: q.isArchived,
+                                  };
+                                });
+                                setEditingQuestions(newEditing);
+                                setEditDisplayedQuestions(prev => !prev);
+                              }}
+                            >
+                              {editDisplayedQuestions ? 'View Mode' : 'Edit Mode'}
+                            </Button>
+                            <div className="space-y-4 mb-2 max-h-[600px] overflow-y-auto pr-2 md:grid md:grid-cols-2">
+                              {displayQuestions.map((question, index) => (
+                                <>
+                                  {editDisplayedQuestions ? (
+                                    <div key={question.id} className="border md:p-4 md:mx-2 rounded-lg border-gray-400 space-y-4">
+                                      <p className="text-xs font-medium text-slate-600">Editing Question {index + 1}</p>
+                                      
+                                      {/* Question text */}
+                                      <div>
+                                        <Label>Question text</Label>
+                                        <textarea
+                                          className="mt-1 min-h-[100px] w-full rounded-md border border-slate-300/10 bg-slate-100 px-3 py-2 text-sm text-black dark:text-slate-300 dark:bg-slate-950"
+                                          value={editingQuestions[question.id]?.question_text || ''}
+                                          onChange={(e) => setEditingQuestions(prev => ({
+                                            ...prev,
+                                            [question.id]: { ...prev[question.id], question_text: e.target.value }
+                                          }))}
+                                        />
+                                      </div>
+
+                                      {/* Explanation */}
+                                      <div>
+                                        <Label>Explanation</Label>
+                                        <textarea
+                                          className="mt-1 min-h-[80px] w-full rounded-md border border-slate-300/10 bg-slate-100 px-3 py-2 text-sm text-black dark:text-slate-300 dark:bg-slate-950"
+                                          value={editingQuestions[question.id]?.explanation || ''}
+                                          onChange={(e) => setEditingQuestions(prev => ({
+                                            ...prev,
+                                            [question.id]: { ...prev[question.id], explanation: e.target.value }
+                                          }))}
+                                        />
+                                      </div>
+
+                                      {/* Metadata JSON */}
+                                      <div>
+                                        <Label>Metadata JSON</Label>
+                                        <textarea
+                                          className="mt-1 min-h-[180px] w-full rounded-md border border-slate-300/10 bg-slate-100 px-3 py-2 font-mono text-xs text-black dark:text-slate-300 dark:bg-slate-950"
+                                          value={editingQuestions[question.id]?.metadataJson || ''}
+                                          onChange={(e) => setEditingQuestions(prev => ({
+                                            ...prev,
+                                            [question.id]: { ...prev[question.id], metadataJson: e.target.value }
+                                          }))}
+                                        />
+                                      </div>
+
+                                      {/* Update button for this question */}
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={async () => {
+                                          const data = editingQuestions[question.id];
+                                          try {
+                                            const metadata = JSON.parse(data.metadataJson);
+                                            await updateAdminQuestion(question.id, {
+                                              type: data.type,
+                                              question_text: data.question_text,
+                                              explanation: data.explanation,
+                                              metadata,
+                                              difficulty: data.difficulty,
+                                              topic: data.topic,
+                                              skillCategory: data.skillCategory,
+                                              isArchived: data.isArchived,
+                                            });
+                                            toast({ title: 'Question updated' });
+                                            // Optionally refresh the displayQuestions
+                                            const updated = displayQuestions.map(q =>
+                                              q.id === question.id ? { ...q, ...data, metadata } : q
+                                            );
+                                            setDisplayQuestions(updated);
+                                          } catch (err) {
+                                            toast({ title: 'Invalid JSON', variant: 'destructive' });
+                                          }
+                                        }}
+                                      >
+                                        Save this question
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-3 p-3">
+                                      <p className="text-xs font-medium text-slate-600">Question {index + 1}:</p>
+                                      <QuestionCard question={flattenQuestion(question)} selectedAnswer="" onAnswerChange={() => {}} />
+                                    </div>
+                                  )}
+                                </>
+                              ))}
+                            </div>
+                            <div>
+                              <Button
+                                type="button"
+                                variant="default"
+                                size="sm"
+                                onClick={() => scanForLatexErrors(displayQuestions)}
+                                disabled={isSaving || latexScanProgress > 0 && latexScanProgress < 100}
+                              >
+                                {latexScanProgress > 0 && latexScanProgress < 100 ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Scanning...
+                                  </>
+                                ) : (
+                                  'Scan for LaTeX Errors'
+                                )}
+                              </Button>
+                            </div>
+                            {/* Progress bar */}
+                            {latexScanProgress > 0 && (
+                              <div className="mt-4 space-y-2">
+                                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                                  <div
+                                    className="h-full bg-indigo-500 transition-all duration-300 dark:bg-indigo-400"
+                                    style={{ width: `${latexScanProgress}%` }}
+                                  />
+                                </div>
+                                <p className="text-sm text-slate-700 dark:text-slate-300">{latexScanStatus}</p>
+                              </div>
+                            )}
+
+                            {/* Logs */}
+                            {latexScanLogs.length > 0 && (
+                              <div className="mt-4 rounded-md border border-slate-300 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                                <Label>Scan log</Label>
+                                <div className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-slate-600 dark:text-slate-400">
+                                  {latexScanLogs.map((entry, idx) => (
+                                    <p key={idx}>{entry}</p>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Error questions list */}
+                            {latexErrorQuestions.length > 0 && (
+                              <div className="mt-6">
+                                <h4 className="mb-2 text-sm font-semibold text-red-600 dark:text-red-400">
+                                  Questions with LaTeX errors ({latexErrorQuestions.length})
+                                </h4>
+                                <div className="max-h-80 space-y-3 overflow-y-auto rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/20">
+                                  {latexErrorQuestions.map((item) => (
+                                    <Card key={item.questionId} className="border-l-4 border-l-red-500">
+                                      <CardHeader className="py-2">
+                                        <CardTitle className="text-xs font-medium">
+                                          {item.questionId}
+                                        </CardTitle>
+                                        <CardDescription className="text-xs">
+                                          {truncateText(item.questionText, 100)}
+                                        </CardDescription>
+                                      </CardHeader>
+                                      <CardContent className="py-2">
+                                        <ul className="list-disc space-y-1 pl-4 text-xs text-red-700 dark:text-red-300">
+                                          {item.errors.map((err, idx) => (
+                                            <li key={idx}>
+                                              <span className="font-mono">[{err.field}]</span> {err.latex}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </CardContent>
+                                    </Card>
+                                  ))}
+                                  <Button
+                                    type='button'
+                                    variant='default'
+                                    size='sm'
+                                    onClick={() => setDisplayQuestions(latexErrorQuestions.map((item) => displayQuestions.find((q) => q.id === item.questionId)))}
+                                  >
+                                    Show questions with Errors
+                                  </Button>
+                                </div>
+                              </div>
+                            )}                            
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
           )}
+
+          {isSaving ? (
+            <Card className="mb-6 border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base text-blue-900 dark:text-blue-200">Action in progress</CardTitle>
+                <CardDescription className="text-blue-800 dark:text-blue-300">
+                  {savingAction.label || 'Processing update...'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-200 dark:bg-blue-400"
+                    style={{ width: `${clampedSavingProgress}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">
+                  {Math.round(clampedSavingProgress)}%
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
         </div>
       </div>
     </>

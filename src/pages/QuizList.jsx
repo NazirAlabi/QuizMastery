@@ -203,7 +203,7 @@ const QuizList = () => {
                 isDevFeaturesEnabled={isDevFeaturesEnabled}
                 startLabel={startButtonLabel(quiz)}
                 fullWidthButton={isDevFeaturesEnabled}
-                className="max-w-md"
+                className="w-md md:max-w-md"
                 defaultExpanded={index === 0}
               />
             ))}
