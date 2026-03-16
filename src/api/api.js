@@ -80,6 +80,7 @@ const toDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+
 const hasAnswerValue = (value) => String(value ?? '').trim().length > 0;
 
 const resolveEstimatedTime = (quiz, fallbackQuestions = 0) => {
@@ -156,6 +157,7 @@ const mapQuizForList = (quiz, courseByQuizId) => {
   const longDescription = normalizeLongDescription(quiz) || shortDescription;
   const description = shortDescription || longDescription || 'No description provided.';
 
+
   return {
     id: quiz.id,
     title: quiz.title || quiz.name,
@@ -180,6 +182,8 @@ const mapQuizForList = (quiz, courseByQuizId) => {
     questionCount,
     estimatedTime,
     isArchived: Boolean(quiz.isArchived),
+    createdAt: toDate(quiz?.createdAt),
+    updatedAt: toDate(quiz?.lastModified),
   };
 };
 

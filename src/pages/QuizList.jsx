@@ -40,7 +40,7 @@ const QuizList = () => {
   const filteredQuizzes = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
     if (!normalizedSearch) return quizzes;
-
+    
     return quizzes.filter((quiz) => {
       const haystack = [
         quiz.title,
@@ -50,6 +50,8 @@ const QuizList = () => {
         quiz.topic,
         quiz.difficulty,
         quiz.id,
+        quiz.createdAt,
+        quiz.updatedAt,
       ]
         .filter(Boolean)
         .join(' ')
@@ -58,6 +60,7 @@ const QuizList = () => {
       return haystack.includes(normalizedSearch);
     });
   }, [quizzes, searchQuery]);
+
 
   useEffect(() => {
     if (!isError || hasShownLoadError) return;

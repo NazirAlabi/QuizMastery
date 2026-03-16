@@ -7,4 +7,4 @@ export const useQuizzes = () =>
   useQuery({
     queryKey: queryKeys.quizzes,
     queryFn: () => measureAsync('query:quizzes', getQuizzes),
-  });
+});

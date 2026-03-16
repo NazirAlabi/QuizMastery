@@ -22,6 +22,29 @@ const getDifficultyVariant = (difficulty) => {
   }
 };
 
+
+
+const getTimeStatus = (quiz) => {
+  if  (!quiz || !quiz?.createdAt || !quiz?.updatedAt) return 0;
+
+  const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000; // 2 days in milliseconds
+  const createdAtTime = new Date(quiz?.createdAt).getTime();
+  const updatedAtTime = new Date(quiz?.updatedAt).getTime();
+
+  if (createdAtTime > twoDaysAgo) {
+    // Quiz was created in the last two days
+    return 2;
+  }
+  else if (updatedAtTime > twoDaysAgo) {
+    // Quiz was updated in the last two days
+    return 1;
+  }
+  else {
+    // Quiz is older than two days
+    return 0;
+  }
+};
+
 const FIVE_MINUTES = 5 * 60 * 1000;
 
 const QuizCard = ({
@@ -51,6 +74,16 @@ const QuizCard = ({
     return [...variations].sort((a, b) => Number(a.difficulty) - Number(b.difficulty));
   }, [variations]);
 
+  const quizTimeStatus = getTimeStatus(quiz);
+
+  const timeStatusObject = quizTimeStatus === 1 ? {
+    badgeClassList: 'md:absolute md:top-2 md:left-6 bg-indigo-50 w-max text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800',
+    text: 'updated',
+  } : quizTimeStatus === 2 ? {
+    badgeClassList: 'md:absolute md:top-2 md:left-6 bg-indigo-50 w-max text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800',
+    text: 'new',
+  } : null;
+
   const prefetchQuiz = useCallback(() => {
     const id = activeQuiz?.id;
     if (!id) return;
@@ -71,7 +104,7 @@ const QuizCard = ({
   return (
     <Card
       className={cn(
-        'hover:shadow-lg transition-shadow flex flex-col dark:hover:shadow-slate-800/50 overflow-hidden w-full h-full group',
+        'relative hover:shadow-lg transition-shadow flex flex-col dark:hover:shadow-slate-800/50 overflow-hidden w-full h-full group',
         className
       )}
       onMouseEnter={prefetchQuiz}
@@ -81,6 +114,11 @@ const QuizCard = ({
         'pb-2',
         isGrid ? 'space-y-1 p-3' : 'pb-3 min-h-[128px]'
       )}>
+        {quizTimeStatus !== 0 && timeStatusObject && (
+          <Badge variant="outline" className={timeStatusObject.badgeClassList}>
+            {timeStatusObject.text}
+          </Badge>
+        )}
         <div className={cn(
           'flex items-start justify-between gap-2',
           isGrid ? 'flex-col' : 'flex-col md:flex-row mb-2'
@@ -98,7 +136,7 @@ const QuizCard = ({
               {activeQuiz.title}
             </Link>
           </CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-center gap-2">
             {hasVariations ? (
               <div className="relative group/difficulty">
                   <select
@@ -142,7 +180,8 @@ const QuizCard = ({
               <Badge variant={getDifficultyVariant(activeQuiz.difficulty)} className="shrink-0 text-[10px] px-1.5 py-0">
                 {activeQuiz.difficulty}
               </Badge>
-            )}
+            )}           
+
             {!isGrid && (
               <Badge
                 variant="outline"
@@ -206,7 +245,7 @@ const QuizCard = ({
           disabled={isStarting}
           size={isGrid ? 'sm' : 'default'}
           className={cn(
-            'bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-all',
+            'bg-indigo-600 truncate hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-all',
             isGrid ? 'w-full h-8 text-xs' : `${fullWidthButton ? 'w-full' : 'w-48 self-center'} min-h-[2.5rem] text-base`
           )}
         >
@@ -214,7 +253,7 @@ const QuizCard = ({
             'mr-1.5 hover:fill-white',
             isGrid ? 'h-3 w-3' : 'h-4 w-4'
           )} />
-          {isStarting ? '...' : startLabel}
+          {!isGrid ? isStarting ? '...' : startLabel : 'Start'}
         </Button>
       </CardContent>
     </Card>
