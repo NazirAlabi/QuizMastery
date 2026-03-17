@@ -5,6 +5,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import App from '@/App';
 import { toast } from '@/components/ui/use-toast.jsx';
 import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
+import { logFirestoreQueryError } from '@/utils/firestoreDiagnostics.js';
 import '@/index.css';
 
 const isOfflineError = (error) => {
@@ -29,6 +30,12 @@ const isOfflineError = (error) => {
 };
 
 const handleGlobalError = (error) => {
+	if (error) {
+		logFirestoreQueryError('react-query', error, {
+			location: window.location.pathname,
+		});
+	}
+
 	if (isOfflineError(error)) {
 		toast({
 			title: 'Connection Error',

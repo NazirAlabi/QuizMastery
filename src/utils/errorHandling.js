@@ -75,3 +75,15 @@ export const getUserFriendlyErrorMessage = (error, fallbackMessage = 'An unexpec
 
   return fallbackMessage;
 };
+
+export const isConnectionRelatedError = (error) => {
+  if (typeof window !== 'undefined' && !window.navigator.onLine) return true;
+
+  const errorMessage = String(error?.message || error?.code || error || '').toLowerCase();
+  return (
+    errorMessage.includes('offline') ||
+    errorMessage.includes('network') ||
+    errorMessage.includes('failed to fetch') ||
+    errorMessage.includes('unavailable')
+  );
+};

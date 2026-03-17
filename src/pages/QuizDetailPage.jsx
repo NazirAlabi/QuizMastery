@@ -5,6 +5,7 @@ import { BookOpen, Clock, Play } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -16,7 +17,8 @@ import { useStartAttempt } from '@/hooks/useStartAttempt.js';
 import { queryKeys } from '@/hooks/queryKeys.js';
 import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
 import { appendReturnUrl } from '@/utils/returnUrl.js';
-import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
+import { getUserFriendlyErrorMessage, isConnectionRelatedError } from '@/utils/errorHandling.js';
+import FeedbackButton from '@/components/feedback/FeedbackButton.jsx';
 
 const buildQuizDescriptionDetail = (quiz) => {
   const baseDescription =
@@ -35,7 +37,7 @@ const QuizDetailPage = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [hasShownLoadError, setHasShownLoadError] = useState(false);
-  const { data: quiz, isLoading, isError } = useQuizPage(id);
+  const { data: quiz, isLoading, isError, error, refetch } = useQuizPage(id);
   const startAttemptMutation = useStartAttempt();
   const location = useLocation();
   const returnUrl = useMemo(
@@ -58,21 +60,21 @@ const QuizDetailPage = () => {
     setHasShownLoadError(true);
     toast({
       title: 'Error',
-      description: getUserFriendlyErrorMessage(null, 'Failed to load quiz page.'),
+      description: getUserFriendlyErrorMessage(error, 'Failed to load quiz page.'),
       variant: 'destructive',
     });
-    navigate('/quizzes');
-  }, [hasShownLoadError, isError, navigate, toast]);
+  }, [error, hasShownLoadError, isError, toast]);
 
-  const descriptionDetail = useMemo(() => buildQuizDescriptionDetail(quiz), [quiz]);
+  const safeQuiz = quiz || { id: id || '', title: 'Quiz', questions: [], associatedCourses: [] };
+  const descriptionDetail = useMemo(() => buildQuizDescriptionDetail(safeQuiz), [safeQuiz]);
   const questionTypeBreakdown = useMemo(() => {
     const bucket = {};
-    (quiz?.questions || []).forEach((question) => {
+    (safeQuiz?.questions || []).forEach((question) => {
       const key = String(question?.type || 'unknown');
       bucket[key] = (bucket[key] || 0) + 1;
     });
     return Object.entries(bucket).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [quiz]);
+  }, [safeQuiz]);
 
   const handleStartQuiz = useCallback(async () => {
     if (!quiz || !user?.id) {
@@ -141,12 +143,12 @@ const QuizDetailPage = () => {
     );
   }
 
-  if (!quiz) return null;
+  const shouldShowDataOverlay = !isLoading && isError;
 
   return (
     <>
       <Helmet>
-        <title>{`${quiz.title} - Quiz Page`}</title>
+        <title>{`${safeQuiz.title} - Quiz Page`}</title>
         <meta name="description" content={descriptionDetail} />
       </Helmet>
 
@@ -159,97 +161,116 @@ const QuizDetailPage = () => {
             <Link to="/quizzes" className="text-sm text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300">
               Back to quizzes
             </Link>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">{quiz.title}</h1>
-              <Badge variant="outline">{quiz.difficulty}</Badge>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white">{safeQuiz.title}</h1>
+                <Badge variant="outline">{safeQuiz.difficulty}</Badge>
+              </div>
+              <FeedbackButton
+                contextKey="quiz_detail"
+                contextLabel="Quiz Details"
+                subjectType="quiz"
+                subjectId={safeQuiz.id}
+                subjectTitle={safeQuiz.title}
+                label="Report Quiz"
+              />
             </div>
             <p className="text-slate-600 dark:text-slate-300">{descriptionDetail}</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <DataStatusOverlay
+            isVisible={shouldShowDataOverlay}
+            title={isConnectionRelatedError(error) ? 'Connection issue' : 'Unable to load quiz'}
+            description={isConnectionRelatedError(error)
+              ? 'Quiz data was not loaded due to bad connection. Retry after reconnecting.'
+              : 'No quiz objects were returned. Please retry.'}
+            onRetry={() => refetch()}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardContent className="py-5">
+                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                    <BookOpen className="h-4 w-4" />
+                    <span>{safeQuiz.questionCount} questions</span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="py-5">
+                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                    <Clock className="h-4 w-4" />
+                    <span>~{safeQuiz.estimatedTime} minutes</span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="py-5">
+                  <span className="text-slate-700 dark:text-slate-300">Topic: {safeQuiz.topic}</span>
+                </CardContent>
+              </Card>
+            </div>
+
             <Card>
-              <CardContent className="py-5">
-                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                  <BookOpen className="h-4 w-4" />
-                  <span>{quiz.questionCount} questions</span>
-                </div>
+              <CardHeader>
+                <CardTitle className="text-lg">Associated Courses</CardTitle>
+                <CardDescription>Courses that currently include this quiz.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                {associatedCourses.length === 0 ? (
+                  <p className="text-sm text-slate-600 dark:text-slate-400">No course associations yet.</p>
+                ) : (
+                  associatedCourses.map((course) => (
+                    <Badge key={course.id} variant="outline" className="gap-2">
+                      <Link
+                        to={`/courses/${course.id}`}
+                        className="hover:text-indigo-700 dark:hover:text-indigo-300"
+                        onMouseEnter={() => prefetchCourse(course.id)}
+                        onFocus={() => prefetchCourse(course.id)}
+                      >
+                        {course.title}
+                      </Link>
+                    </Badge>
+                  ))
+                )}
               </CardContent>
             </Card>
+
             <Card>
-              <CardContent className="py-5">
-                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                  <Clock className="h-4 w-4" />
-                  <span>~{quiz.estimatedTime} minutes</span>
-                </div>
+              <CardHeader>
+                <CardTitle className="text-lg">Question Type Breakdown</CardTitle>
+                <CardDescription>Distribution of question formats in this quiz.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {questionTypeBreakdown.length === 0 ? (
+                  <p className="text-sm text-slate-600 dark:text-slate-400">No questions available.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {questionTypeBreakdown.map(([type, count]) => (
+                      <Badge key={type} variant="outline">{type}: {count}</Badge>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="py-5">
-                <span className="text-slate-700 dark:text-slate-300">Topic: {quiz.topic}</span>
-              </CardContent>
-            </Card>
-          </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Associated Courses</CardTitle>
-              <CardDescription>Courses that currently include this quiz.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              {associatedCourses.length === 0 ? (
-                <p className="text-sm text-slate-600 dark:text-slate-400">No course associations yet.</p>
-              ) : (
-                associatedCourses.map((course) => (
-                  <Badge key={course.id} variant="outline" className="gap-2">
-                    <Link
-                      to={`/courses/${course.id}`}
-                      className="hover:text-indigo-700 dark:hover:text-indigo-300"
-                      onMouseEnter={() => prefetchCourse(course.id)}
-                      onFocus={() => prefetchCourse(course.id)}
-                    >
-                      {course.title}
-                    </Link>
-                  </Badge>
-                ))
-              )}
-            </CardContent>
-          </Card>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={handleStartQuiz}
+                disabled={isStarting}
+                className="min-h-[2.75rem] bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                {isStarting ? 'Starting...' : 'Start Quiz'}
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/courses">Browse Courses</Link>
+              </Button>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Question Type Breakdown</CardTitle>
-              <CardDescription>Distribution of question formats in this quiz.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {questionTypeBreakdown.length === 0 ? (
-                <p className="text-sm text-slate-600 dark:text-slate-400">No questions available.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {questionTypeBreakdown.map(([type, count]) => (
-                    <Badge key={type} variant="outline">{type}: {count}</Badge>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={handleStartQuiz}
-              disabled={isStarting}
-              className="min-h-[2.75rem] bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600"
-            >
-              <Play className="h-4 w-4 mr-2" />
-              {isStarting ? 'Starting...' : 'Start Quiz'}
-            </Button>
-            <Button asChild variant="outline">
-              <Link to="/courses">Browse Courses</Link>
-            </Button>
-          </div>
-
-          {isDevFeaturesEnabled ? (
-            <p className="text-xs font-mono text-slate-500 dark:text-slate-400">quizId={quiz.id}</p>
-          ) : null}
+            {isDevFeaturesEnabled ? (
+              <p className="text-xs font-mono text-slate-500 dark:text-slate-400">quizId={safeQuiz.id}</p>
+            ) : null}
+          </DataStatusOverlay>
         </div>
       </div>
     </>

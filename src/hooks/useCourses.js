@@ -2,6 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { getCoursesWithQuizzes } from '@/api/api.js';
 import { queryKeys } from '@/hooks/queryKeys.js';
 import { measureAsync } from '@/utils/performance.js';
+import {
+  isUnexpectedFirestoreResponse,
+  logFirestoreQueryError,
+  logUnexpectedFirestoreResponse,
+} from '@/utils/firestoreDiagnostics.js';
 
 const compareCourses = (courseA, courseB) => {
   const quizCountA = Array.isArray(courseA?.quizzes)
@@ -21,6 +26,18 @@ const compareCourses = (courseA, courseB) => {
 export const useCourses = () =>
   useQuery({
     queryKey: queryKeys.courses,
-    queryFn: () => measureAsync('query:courses', getCoursesWithQuizzes),
+    queryFn: async () => {
+      try {
+        const data = await measureAsync('query:courses', getCoursesWithQuizzes);
+        if (isUnexpectedFirestoreResponse(data, 'array')) {
+          logUnexpectedFirestoreResponse('useCourses', 'array', data);
+          return [];
+        }
+        return data;
+      } catch (error) {
+        logFirestoreQueryError('useCourses', error);
+        throw error;
+      }
+    },
     select: (courses) => [...courses].sort(compareCourses),
   });

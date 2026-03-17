@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils.js';
 import LatexRenderer from '@/components/ui/LatexRenderer.jsx';
 import ExplanationCard from '@/components/quiz/ExplanationCard.jsx';
 import { evaluateAnswer, isQuestionAutoGraded } from '@/utils/evaluateAnswer.js';
+import FeedbackButton from '@/components/feedback/FeedbackButton.jsx';
 
 const QuestionCard = ({ question, selectedAnswer, onAnswerChange, showResult = false }) => {
   const getDifficultyVariant = (difficulty) => {
@@ -153,13 +154,22 @@ const QuestionCard = ({ question, selectedAnswer, onAnswerChange, showResult = f
               <LatexRenderer content={question.text} />
             </div>
           </div>
-          <div className="flex gap-2 flex-shrink-0 self-start">
+          <div className="flex gap-2 flex-shrink-0 self-start flex-wrap justify-end">
             <Badge variant={getDifficultyVariant(question.difficulty)} className="text-xs md:text-sm px-2 py-1">
               {question.difficulty}
             </Badge>
             <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 text-xs md:text-sm px-2 py-1 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800">
               {question.topic}
             </Badge>
+            <FeedbackButton
+              contextKey="question_card"
+              contextLabel="Question"
+              subjectType="question"
+              subjectId={question?.id || ''}
+              subjectTitle={String(question?.text || '').slice(0, 120)}
+              label="Flag"
+              size="sm"
+            />
           </div>
         </div>
 

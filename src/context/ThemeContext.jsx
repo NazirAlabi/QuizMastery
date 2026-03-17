@@ -16,15 +16,27 @@ export const ThemeProvider = ({ children }) => {
     }
     return 'prism';
   });
+  const [uiScale, setUiScale] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('uiScale');
+      if (saved === 'compact' || saved === 'default' || saved === 'comfortable') {
+        return saved;
+      }
+      return window.innerWidth < 768 ? 'comfortable' : 'default';
+    }
+    return 'default';
+  });
 
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(theme);
     root.setAttribute('data-wallpaper', wallpaperSet);
+    root.setAttribute('data-ui-scale', uiScale);
     localStorage.setItem('theme', theme);
     localStorage.setItem('wallpaperSet', wallpaperSet);
-  }, [theme, wallpaperSet]);
+    localStorage.setItem('uiScale', uiScale);
+  }, [theme, wallpaperSet, uiScale]);
 
   const toggleTheme = useCallback(() => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
@@ -35,8 +47,8 @@ export const ThemeProvider = ({ children }) => {
   }, []);
 
   const value = useMemo(
-    () => ({ theme, toggleTheme, wallpaperSet, toggleWallpaper }),
-    [theme, toggleTheme, wallpaperSet, toggleWallpaper]
+    () => ({ theme, toggleTheme, wallpaperSet, toggleWallpaper, uiScale, setUiScale }),
+    [theme, toggleTheme, wallpaperSet, toggleWallpaper, uiScale, setUiScale]
   );
 
   return (

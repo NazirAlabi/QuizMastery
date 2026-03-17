@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Navigate } from 'react-router-dom';
-import { Archive, ArchiveRestore, Loader2, Plus, Trash2, Upload, ChevronDown, Copy } from 'lucide-react';
+import { Archive, ArchiveRestore, Loader2, Plus, Trash2, Upload, ChevronDown, Copy, CheckCircle2, Search, AlertTriangle } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
 import QuestionCard from '@/components/quiz/QuestionCard';
 import { useAuth } from '@/hooks/useAuth.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
@@ -23,17 +24,28 @@ import {
   createAdminQuiz,
   createQuizFromQuestionUpload,
   getAdminContentSnapshot,
+  getDeleteImpact,
+  hardDeleteCourse,
+  hardDeleteQuestion,
+  hardDeleteQuiz,
   removeDuplicateAdminContent,
   removeQuestionFromQuiz,
   updateAdminCourse,
   updateAdminQuestion,
   updateAdminQuiz,
 } from '@/api/api.js';
-import katex from 'katex';
-import 'katex/dist/katex.min.css'; 
+import {
+  applySafeLatexFixes,
+  detectLatexHeuristics,
+  extractLatexChunks,
+  fixAllSafeLatexIssues,
+  hasUnbalancedDelimiters,
+  validateLatex,
+} from '@/utils/latexDiagnostics.js';
 import { measureAsync } from '@/utils/performance.js';
 import { useQueryClient } from '@tanstack/react-query';
-import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
+import { getUserFriendlyErrorMessage, isConnectionRelatedError } from '@/utils/errorHandling.js';
+
 const COURSE_DEFAULTS = {
   title: '',
   shortDescription: '',
@@ -174,149 +186,6 @@ const QUIZ_GENERATION_PROMPT_TEMPLATE = `Generate a quiz question set based on t
 
 [INSERT QUIZ DESCRIPTION HERE]
 
-Your task is to produce a valid JSON object that includes a title, a thoughtful estimate of the time required to complete the quiz (in minutes), and the array of questions. Follow this two‑step process internally:
-
-Design the quiz questions – Carefully create the question set according to all requirements below (coverage, types, LaTeX, difficulty, skill category, explanations, etc.). Ensure the questions collectively address every focus topic listed in the description.
-
-Estimate the time – After the questions are designed, think about the time a typical learner would need to answer them. Provide an estimate on the lower end (i.e., a reasonably quick but attentive pace). Base this on the number of questions, their types (MCQ, numeric, short answer), and their difficulty/complexity. For example, simple recall MCQs might take 30 seconds each, while a multi‑step calculation could take 2 minutes. Use your judgment; do not simply apply a formula. (A fallback guideline of 1 minute per 2 questions is only a server‑side default – your reasoned estimate is preferred.)
-
-Finally, output only the JSON object with this structure:
-
-{
-  "title": "string (concise title derived from the description; use the 'Topic:' line if present, otherwise create a short descriptive title)",
-  "estimatedTime": integer,  // your reasoned estimate in whole minutes (ceil to nearest minute)
-  "questions": [
-    {
-      "type": "mcq" | "short_answer" | "numeric",
-      "question_text": "The question text",
-      "metadata": {},  // See format specifications below
-      "difficulty": 1-3,
-      "topic": "concise topic identifier (max 3 words)",
-      "skillCategory": 1 | 2 | 3,
-      "explanation": "Brief explanation of the correct answer"
-    }
-  ]
-}
-METADATA FORMATS
-For MCQ:
-
-{
-  "options": [
-    { "id": "A", "text": "option text" },
-    { "id": "B", "text": "option text" },
-    { "id": "C", "text": "option text" },
-    { "id": "D", "text": "option text" }
-  ],
-  "correct_answer": "A"  // The ID of the correct option
-}
-For Short Answer:
-
-{
-  "accepted_answers": ["answer1", "alternate phrasing", "another acceptable answer"],
-  "case_sensitive": false,
-  "ignore_whitespace": true
-}
-For Numeric:
-
-{
-  "numeric_answer": 123.45,  // The correct numeric value
-  "tolerance": 0.01  // Acceptable margin of error
-}
-LATEX SUPPORT – CRITICAL: ESCAPE BACKSLASHES
-The platform fully supports LaTeX math rendering. Use $...$ for inline math and $$...$$ for display math wherever appropriate. This is especially important for questions involving chemical formulas, equations, mathematical expressions, or any scientific notation.
-
-⚠️ IMPORTANT JSON REQUIREMENT: In JSON, the backslash (\) is an escape character. To include a literal backslash in a string (as needed for LaTeX commands), you must write two backslashes (\\) for every single backslash that should appear in the final LaTeX.
-
-For example:
-
-\\Delta must be written as \\\\Delta
-
-\\int → \\\\int
-
-\\sum → \\\\sum
-
-\\rightarrow → \\\\rightarrow
-
-\\frac{1}{2} → \\\\frac{1}{2}
-
-\\ln → \\\\ln
-
-\\log → \\\\log
-
-Failure to double the backslashes will result in an "invalid escape character" error and the JSON will be rejected. Always verify that every LaTeX command in your JSON strings uses double backslashes.
-
-QUESTION REQUIREMENTS
-COVERAGE: The question set must collectively address ALL focus topics listed in the quiz description. Distribute questions across topics as you see fit based on relevance and the natural need for assessment.
-
-QUESTION TYPES:
-
-PRIMARY: Multiple choice questions (MCQ) and numeric questions
-
-SECONDARY: Short answer questions (use sparingly, only when the expected answer is robust and limited to 1‑2 words/phrases)
-
-AVOID: Long answer questions (do not include any)
-
-The quiz may consist entirely of MCQ and numeric questions if suitable short answer questions cannot be generated.
-
-TOPIC FIELD: Create a concise identifier (1‑3 words maximum) that semantically maps to one of the focus topics. For example, if the focus topic is "Definition and four functions of metabolism", appropriate topic fields could be: "Metabolism definition", "Functions of metabolism", or simply "Metabolism functions". The identifier does not need to use exact words from the focus topic but must clearly relate to it.
-
-DIFFICULTY (1‑3): Assign relative difficulty based on:
-
-Level 1: Basic recall, definitional questions, straightforward calculations
-
-Level 2: Conceptual understanding, multi‑step reasoning, application of principles
-
-Level 3: Complex synthesis, analysis, integration of multiple concepts, challenging problem‑solving
-
-SKILL CATEGORY:
-
-1 (Recall): Direct fact recall, definitions, identifying terms
-
-2 (Conceptual): Understanding relationships, explaining processes, comparing/contrasting
-
-3 (Application): Applying knowledge to new situations, problem‑solving, experimental design
-
-EXPLANATION: Provide a brief, clear explanation of why the answer is correct. For incorrect MCQ options, you may optionally include brief explanations of why they are wrong, but the primary explanation should focus on the correct answer.
-
-ORDER: Questions should be arranged in random order by topic. If possible, order generally by increasing difficulty, but this is not strictly required.
-
-COUNT: Generate exactly [estimated_questions] questions as specified in the quiz description.
-
-VALIDATION CHECKLIST (for your internal use)
-JSON is valid and properly formatted (no trailing commas, all strings properly quoted)
-
-All backslashes in LaTeX are doubled (e.g., \\\\Delta, \\\\int, \\\\sum, \\\\rightarrow, \\\\frac)
-
-Correct number of questions generated
-
-All focus topics are covered at least once
-
-No long answer questions included
-
-Short answer questions used minimally
-
-All MCQ options are plausible (not obviously incorrect)
-
-Numeric answers include appropriate tolerance
-
-Difficulty ratings are consistent across questions
-
-Skill categories align with question nature
-
-Topic fields semantically map to focus topics
-
-Explanations are helpful and accurate
-
-LaTeX is used where appropriate
-
-Title is descriptive and derived from the description
-
-estimatedTime is a reasoned estimate (not a mechanical calculation) and is a whole number of minutes`;
-
-const QUIZ_VARIATION_GENERATION_PROMPT_TEMPLATE = `Generate a quiz question set based on the following quiz description:
-
-[INSERT QUIZ DESCRIPTION HERE]
-
 Return only one valid JSON object with this structure:
 
 {
@@ -339,10 +208,10 @@ Do not include any extra text, markdown, or code fences. No additional keys are 
 
 INTERNAL TASK
 1) Create the full quiz first.
-2) Then estimate the completion time in whole minutes at a reasonably quick but attentive pace. Use judgment, not a fixed formula. The estimate should be a realistic lower-end estimate based on question count, type mix, and difficulty.
+2) Then estimate the completion time in whole minutes at a reasonably quick but attentive pace, based on question count, type mix, and difficulty.
 
 QUESTION COUNT
-Generate exactly [estimated_questions] questions.
+Generate between a few less or more of the estimated questions if given otherwise, generate exactly 10 questions.
 
 TITLE
 - The title must be concise and descriptive.
@@ -352,14 +221,12 @@ TITLE
 COVERAGE
 - Cover all focus topics explicitly stated in the quiz description.
 - Do not omit any stated topic.
-- Use each question’s topic field as a concise 1–3 word identifier that clearly maps to one focus topic.
-- Do not invent new topics unless needed to make the label concise.
+- Use each question’s topic field as a concise 1–2 word identifier that clearly maps to one focus topic.
+- Do not invent unrelated topics.
 
 QUESTION TYPES
 - Use MCQ and numeric as the primary types.
-- Use short_answer sparingly, only when the expected answer is short and robust (usually 1–2 words or a short phrase).
-- Do not include long-answer questions.
-- The quiz may consist entirely of MCQ and numeric questions if that fits the content best.
+- Use short_answer sparingly, only when the expected answer is short and unambiguous (1–2 words).
 
 METADATA FORMATS
 
@@ -375,14 +242,13 @@ MCQ:
 }
 
 Rules:
-- Exactly 4 options.
-- Options must be labeled A, B, C, D in order.
-- Exactly one correct answer.
-- Distractors must be plausible.
+- Exactly 4 options in order A, B, C, D
+- Exactly one correct answer
+- Distractors must be plausible
 
 Short answer:
 {
-  "accepted_answers": ["answer1", "alternate phrasing", "another acceptable answer"],
+  "accepted_answers": ["answer1", "alternate phrasing"],
   "case_sensitive": false,
   "ignore_whitespace": true
 }
@@ -394,62 +260,219 @@ Numeric:
 }
 
 Rules:
-- numeric_answer must be a number, not a string.
-- Include tolerance when an approximation is acceptable.
-- Omit tolerance only when the answer must be exact.
+- numeric_answer must be a number
+- Include tolerance when approximation is acceptable
+- Make tolerance 0 when required
 
 LATEX
-- Use $...$ for inline math and $$...$$ for display math.
-- Because the output must be valid JSON, every backslash in LaTeX must be escaped with a double backslash.
-- Examples: \\\\Delta -> \\\\\\\\Delta, \\\\int -> \\\\\\\\int, \\\\sum -> \\\\\\\\sum, \\\\rightarrow -> \\\\\\\\rightarrow, \\\\frac{1}{2} -> \\\\\\\\frac{1}{2}
+- Use $...$ for inline math and $$...$$ for display math
+- Escape all backslashes as \\ in JSON
 
 DIFFICULTY
-Use this scale:
-- 1 = basic recall, definitions, straightforward calculations
-- 2 = conceptual understanding, multi-step reasoning, application of principles
-- 3 = complex synthesis, analysis, integration of multiple concepts, challenging problem-solving
-
-Match difficulty to the actual cognitive demand of each question.
+- 1 = basic recall or direct calculation
+- 2 = conceptual understanding or multi-step reasoning
+- 3 = complex analysis or problem-solving
 
 SKILL CATEGORY
 - 1 = Recall
 - 2 = Conceptual
 - 3 = Application
 
-Use the category that best matches the question.
+Use values consistent with the question’s cognitive demand.
 
 ORDERING
-- Arrange questions in a sensible topic order.
-- If possible, move generally from easier to harder, but this is optional.
+- Prefer generally increasing difficulty, but not required
 
-QUALITY RULES
-- Questions must be original, educationally sound, and factually correct.
-- Explanations must be brief, clear, and accurate.
-- MCQ distractors should be believable.
-- All questions should be distinct.
+QUALITY
+- Questions must be original, clear, and factually correct
+- Explanations must clearly justify the correct answer
+- All questions must be distinct
 
 ESTIMATED TIME
-- Return estimatedTime as a whole number of minutes.
-- Base it on judgment, not a strict formula.
-- Use a realistic lower-end estimate for an attentive learner.
+- Whole number of minutes
+- Realistic lower-end estimate based on quiz complexity
 
 FINAL CHECK
-Before outputting, ensure:
-- the JSON is valid
-- no trailing commas
-- exactly [estimated_questions] questions are included
-- all focus topics are covered
-- no long-answer questions are included
-- short_answer is used sparingly
-- MCQ options are plausible and correctly keyed
-- numeric answers include appropriate tolerance
-- difficulty and skillCategory are consistent
-- topic labels are concise and semantically aligned
-- LaTeX backslashes are escaped correctly
-- title is concise and derived from the description
-- estimatedTime is a whole number
+- Valid JSON (no trailing commas)
+- Exactly [estimated_questions] questions
+- All focus topics covered
+- Short answers used minimally
+- MCQs properly structured
+- Numeric tolerance appropriate
+- Difficulty and skillCategory consistent
+- Topic labels concise and aligned
+- LaTeX properly escaped
+- Title is concise
+- estimatedTime is reasonable
 
 Now generate the quiz JSON object.`;
+
+const QUIZ_VARIATION_GENERATION_PROMPT_TEMPLATE = `You are an expert educator and curriculum designer. Your task is to generate a new set of quiz questions in JSON format based on a provided sample question set and a target overall difficulty level.
+
+INPUT:
+- A JSON object containing:
+  - "questions": an array of sample questions
+- Each question includes:
+  "type", "question_text", "metadata", "difficulty" (1–3), "topic", "skillCategory" (1–3), "explanation"
+- The current overall difficulty of the given set: "beginner", "intermediate", or "advanced"
+- A target overall difficulty: "beginner", "intermediate", or "advanced"
+
+IF TARGET DIFFICULTY AND CURRENT DIFFICULTY ARE THE SAME, IGNORE THE REST OF THE PROMPT AND RETURN AN EMPTY LIST!!!
+
+OUTPUT:
+Return only one valid JSON object:
+{
+  "questions": [ ... ]
+}
+
+Do not include any extra text or markdown. Do not add or remove fields. Each question must contain exactly:
+"type", "question_text", "metadata", "difficulty", "topic", "skillCategory", "explanation"
+
+---
+
+TOPIC RULES
+- Extract the set of unique topics strictly from the sample’s "topic" field.
+- Every generated question’s "topic" must exactly match one of these topics.
+- Every topic must appear at least once.
+- Do not create or infer new topics.
+
+---
+
+QUESTION COUNT
+Let N = number of sample questions.
+
+- If target difficulty is "easy": generate exactly N questions
+- If "intermediate": generate N to N+1 questions
+- If "advanced": generate N+1 to N+2 questions
+
+---
+
+DIFFICULTY (CORE LOGIC)
+- Use BOTH:
+  1) the provided sample "overallDifficulty"
+  2) the per-question difficulty values
+
+- Determine the relative shift:
+  easy < intermediate < advanced
+
+- Apply transformation:
+  - If target = sample → keep similar distribution
+  - If target is one level higher → shift most questions up by ~1 level (cap at 3)
+  - If target is one level lower → shift most questions down by ~1 level (floor at 1)
+  - If target differs by two levels → shift aggressively toward target
+
+- Preserve relative structure where possible (e.g., harder questions remain relatively harder than others)
+
+- Difficulty scale:
+  1 = basic recall / direct application  
+  2 = conceptual / multi-step reasoning  
+  3 = complex analysis / synthesis  
+
+---
+
+SKILL CATEGORY (INDEPENDENT)
+- 1 = Recall
+- 2 = Conceptual
+- 3 = Application
+
+Rules:
+- Assign skillCategory independently from difficulty
+- Do not enforce fixed mappings
+- Maintain variety in pairings where educationally valid
+- Ensure assignments still make sense for the question
+
+---
+
+QUESTION TYPES
+
+Primary:
+- mcq
+- numeric
+
+Secondary:
+- short_answer
+
+Constraint:
+- short_answer ≤ 20% of total questions
+
+---
+
+METADATA FORMATS
+
+MCQ:
+{
+  "options": [
+    { "id": "A", "text": "..." },
+    { "id": "B", "text": "..." },
+    { "id": "C", "text": "..." },
+    { "id": "D", "text": "..." }
+  ],
+  "correct_answer": "A"
+}
+
+Rules:
+- Exactly 4 options in order A–D
+- Exactly one correct answer
+- Distractors must be plausible
+
+Short Answer:
+{
+  "accepted_answers": ["answer1", "answer2"],
+  "case_sensitive": false,
+  "ignore_whitespace": true
+}
+
+Numeric:
+{
+  "numeric_answer": 123.45,
+  "tolerance": 0.01
+}
+
+- Include tolerance when appropriate
+- Omit only if exact answer is required
+
+---
+
+LATEX
+- Use $...$ or $$...$$ where appropriate
+- Escape backslashes as \\
+
+---
+
+ORIGINALITY
+- Questions must be mostly original
+- At most 10% may be light paraphrases of sample questions
+- The rest must test the same concepts in new ways
+
+---
+
+QUALITY
+- Questions must be clear, accurate, and educationally sound
+- Explanations must clearly justify the correct answer
+- All questions must be distinct
+
+---
+
+FINAL CHECK
+Ensure before output:
+- Valid JSON (no trailing commas)
+- Correct number of questions
+- All sample topics covered
+- No new topics introduced
+- short_answer within limit
+- MCQs properly structured
+- Numeric answers reasonable
+- Difficulty appropriately shifted relative to input overallDifficulty
+- SkillCategory varied and sensible
+- Explanations accurate
+
+---
+
+Now generate the new question set with this input:
+
+INPUT: Current Set = [INSERT SAMPLE QUESTION SET]
+      Current Difficulty = [CURRENT DIFFICULTY]
+      Target Difficulty = [TARGET DIFFICULTY]`;
 
 const BULK_UPLOAD_TEMPLATE = '{\n  "questions": []\n}';
 
@@ -505,15 +528,19 @@ const uniqueStringIds = (items) =>
   );
 
 const prettyJson = (value) => JSON.stringify(value || {}, null, 2);
+
 const compareAlphabetically = (a, b) =>
   String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
+
 const truncateText = (value, maxLength = 56) => {
   const text = String(value || '').trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength).trim()}...`;
 };
+
 const formatQuestionLabel = (question, maxLength = 72) =>
   `${question?.topic || 'General'} - ${truncateText(question?.question_text || '', maxLength)}`;
+
 const normalizeQuestionUploadPayload = (payload) => {
   const candidate = Array.isArray(payload)
     ? payload
@@ -595,7 +622,7 @@ function flattenQuestion(apiQuestion) {
 }
 
 const DEDUPE_IDLE_MESSAGE = 'Ready to scan for strict semantic duplicates.';
-const DASHBOARD_SELECT_PAGE_SIZE = 150;
+const DASHBOARD_SELECT_PAGE_SIZE = 50;
 
 const DevContentDashboard = () => {
   const { isDevFeaturesEnabled } = useAuth();
@@ -603,6 +630,8 @@ const DevContentDashboard = () => {
   const queryClient = useQueryClient();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [contentLoadError, setContentLoadError] = useState(null);
+  const [showRefreshPrompt, setShowRefreshPrompt] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeduping, setIsDeduping] = useState(false);
   const [schema, setSchema] = useState(false);
@@ -633,6 +662,7 @@ const DevContentDashboard = () => {
   const [bulkUploadMode, setBulkUploadMode] = useState('manual');
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [promptInput, setPromptInput] = useState('');
+  const [originalDifficulty, setOriginalDifficulty] = useState('intermediate');
   const [dedupeProgress, setDedupeProgress] = useState(0);
   const [dedupeStatus, setDedupeStatus] = useState(DEDUPE_IDLE_MESSAGE);
   const [dedupeLogs, setDedupeLogs] = useState([DEDUPE_IDLE_MESSAGE]);
@@ -648,6 +678,15 @@ const DevContentDashboard = () => {
   });
   const [showVariationPromptOptions, setShowVariationPromptOptions] = useState(false);
   const [targetVariationDifficulty, setTargetVariationDifficulty] = useState(2);
+
+  // Delete Manager state
+  const [deleteManagerType, setDeleteManagerType] = useState('course');
+  const [deleteManagerSearch, setDeleteManagerSearch] = useState('');
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [multipleItemsToDelete, setMultipleItemsToDelete] = useState([]);
+  const [selectedDeleteIds, setSelectedDeleteIds] = useState(new Set());
+  const [deleteImpact, setDeleteImpact] = useState(null);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
 
   const selectedCourse = useMemo(
     () => courses.find((course) => course.id === selectedCourseId) || null,
@@ -751,6 +790,98 @@ const groupedQuizzes = useMemo(() => {
     [sortedCourses, bulkLinkedCourseIds]
   );
 
+  // Handle bulk fixing safe LaTeX issues
+  const handleFixAllLatex = () => {
+    const editingCount = Object.keys(editingQuestions).length;
+    // Use editing buffer as source if it exists, otherwise use display state
+    const sourceArr = editingCount > 0 
+      ? Object.entries(editingQuestions).map(([id, data]) => ({ id, ...data }))
+      : displayQuestions;
+      
+    const fixedArr = fixAllSafeLatexIssues(sourceArr);
+    const newEditing = { ...editingQuestions };
+
+    fixedArr.forEach(q => {
+      newEditing[q.id] = {
+        type: q.type,
+        question_text: q.question_text,
+        explanation: q.explanation || '',
+        metadataJson: q.metadataJson || (q.metadata ? JSON.stringify(q.metadata, null, 2) : '{}'),
+        difficulty: q.difficulty,
+        topic: q.topic,
+        skillCategory: q.skillCategory,
+        isArchived: q.isArchived,
+      };
+    });
+
+    setEditingQuestions(newEditing);
+    setEditDisplayedQuestions(true);
+    toast({
+      title: 'Safe fixes applied to edit state',
+      description: 'Review the changes and save them when ready.',
+    });
+  };
+
+  // Handle individual safe fix
+  const handleApplySafeFix = (questionId, fieldName, fixedValue) => {
+    setEditingQuestions(prev => {
+      const question = displayQuestions.find(q => q.id === questionId);
+      if (!question && !prev[questionId]) return prev;
+
+      const current = prev[questionId] || {
+        type: question.type,
+        question_text: question.question_text,
+        explanation: question.explanation || '',
+        metadataJson: JSON.stringify(question.metadata || {}, null, 2),
+        difficulty: question.difficulty,
+        topic: question.topic,
+        skillCategory: question.skillCategory,
+        isArchived: question.isArchived,
+      };
+
+      const updated = { ...current };
+
+      if (fieldName === 'question_text' || fieldName === 'explanation') {
+        updated[fieldName] = fixedValue;
+      } else if (fieldName.startsWith('option_')) {
+        const optionId = fieldName.replace('option_', '');
+        try {
+          const metadata = JSON.parse(updated.metadataJson);
+          const options = (metadata.options || []).map(opt => {
+            if ((opt.id || '').toString() === optionId) {
+              return { ...opt, text: fixedValue };
+            }
+            return opt;
+          });
+          updated.metadataJson = JSON.stringify({ ...metadata, options }, null, 2);
+        } catch (e) {
+          console.error('Error updating option JSON', e);
+        }
+      } else if (fieldName.startsWith('accepted_answer_')) {
+        const idx = parseInt(fieldName.replace('accepted_answer_', ''), 10);
+        try {
+          const metadata = JSON.parse(updated.metadataJson);
+          const accepted_answers = [...(metadata.accepted_answers || [])];
+          accepted_answers[idx] = fixedValue;
+          updated.metadataJson = JSON.stringify({ ...metadata, accepted_answers }, null, 2);
+        } catch (e) {
+          console.error('Error updating accepted answer JSON', e);
+        }
+      }
+
+      return {
+        ...prev,
+        [questionId]: updated
+      };
+    });
+
+    setEditDisplayedQuestions(true);
+    toast({
+      title: 'Fix applied to edit state',
+      description: `Updated ${fieldName} for ${questionId}.`,
+    });
+  };
+
   const loadAllContent = async (showLoader = true) => {
     if (showLoader) {
       setIsLoading(true);
@@ -762,7 +893,10 @@ const groupedQuizzes = useMemo(() => {
       setCourses(snapshot.courses || []);
       setQuizzes(snapshot.quizzes || []);
       setQuestions(snapshot.questions || []);
+      setContentLoadError(null);
+      setShowRefreshPrompt(false);
     } catch (error) {
+      setContentLoadError(error);
       toast({
         title: 'Failed to load content',
         description: getUserFriendlyErrorMessage(error, 'Could not fetch dashboard data.'),
@@ -920,6 +1054,7 @@ const groupedQuizzes = useMemo(() => {
   }
 
   const isActionRunning = (actionKey) => isSaving && savingAction.key === actionKey;
+
   const clampedSavingProgress = Math.max(0, Math.min(100, savingAction.progress));
 
   const withSaving = async (actionDetails, callback) => {
@@ -936,6 +1071,7 @@ const groupedQuizzes = useMemo(() => {
       await loadAllContent(false);
       await queryClient.invalidateQueries();
       setSavingAction((previous) => ({ ...previous, progress: 100 }));
+      setShowRefreshPrompt(true);
       toast({ title: successTitle });
     } catch (error) {
       toast({
@@ -1334,6 +1470,70 @@ const groupedQuizzes = useMemo(() => {
     );
   };
 
+  const handleSaveAllQuestionChanges = async () => {
+    const questionIds = Object.keys(editingQuestions);
+    if (questionIds.length === 0) {
+      toast({ title: 'No changes', description: 'No question changes to save.', variant: 'outline' });
+      return;
+    }
+
+    setSavingAction({ label: 'Saving all question changes...', progress: 0 });
+    setIsSaving(true);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      for (let i = 0; i < questionIds.length; i++) {
+        const qid = questionIds[i];
+        const data = editingQuestions[qid];
+        
+        try {
+          const metadata = JSON.parse(data.metadataJson);
+          await updateAdminQuestion(qid, {
+            type: data.type,
+            question_text: data.question_text,
+            metadata,
+            difficulty: Number(data.difficulty),
+            topic: data.topic,
+            skillCategory: Number(data.skillCategory),
+            explanation: data.explanation,
+            isArchived: Boolean(data.isArchived),
+          });
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to save question ${qid}:`, err);
+          failCount++;
+        }
+
+        setSavingAction(prev => ({
+          ...prev,
+          progress: ((i + 1) / questionIds.length) * 100
+        }));
+      }
+
+      if (successCount > 0) {
+        toast({ 
+          title: 'Bulk save complete', 
+          description: `Successfully saved ${successCount} questions.${failCount > 0 ? ` Failed to save ${failCount} questions.` : ''}` 
+        });
+        await loadAllContent(false);
+        setShowRefreshPrompt(true);
+        // We don't clear editingQuestions here because the user might want to keep some context, 
+        // but loadAllContent will refresh the displayQuestions.
+      } else if (failCount > 0) {
+        toast({ 
+          title: 'Save failed', 
+          description: `Failed to save ${failCount} questions. Check console or JSON format.`, 
+          variant: 'destructive' 
+        });
+      }
+    } finally {
+      setIsSaving(false);
+      setSavingAction({ label: '', progress: 0 });
+    }
+  };
+
   const handleBulkQuizUploadFile = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1395,10 +1595,10 @@ const groupedQuizzes = useMemo(() => {
     }
   };
 
-  const handleCopyGeneratedPrompt = async () => {
+  const handleCopyQuizGenerationPrompt = async () => {
     const generatedPrompt = QUIZ_GENERATION_PROMPT_TEMPLATE.replace(
       '[INSERT QUIZ DESCRIPTION HERE]',
-      promptInput || '[INSERT QUIZ DESCRIPTION HERE]'
+      promptInput || 'No Quiz Description. Abort.'
     );
     try {
       await navigator.clipboard.writeText(generatedPrompt);
@@ -1416,23 +1616,18 @@ const groupedQuizzes = useMemo(() => {
   };
 
   const handleCopyVariationPrompt = async () => {
-    const currentDifficultyLabel = QUIZ_DIFFICULTY_LABELS[bulkForm.difficulty] || 'intermediate';
-    const targetDifficultyLabel = QUIZ_DIFFICULTY_LABELS[targetVariationDifficulty] || 'intermediate';
-    
-    const contextHeader = `I want to create a new difficulty variation of the following quiz.
-Current Difficulty: ${currentDifficultyLabel}
-Target Difficulty: ${targetDifficultyLabel}
-
-Original Quiz JSON:
-${bulkForm.uploadText}
-
-Please use the structure below to generate the new variation. Maintain the same title and topic but adjust the questions to match the target difficulty.
-`;
+    setBulkForm((v) => ({ ...v, difficulty: targetVariationDifficulty }));    const targetDifficultyLabel = QUIZ_DIFFICULTY_LABELS[targetVariationDifficulty] || 'intermediate';
 
     const generatedPrompt = QUIZ_VARIATION_GENERATION_PROMPT_TEMPLATE.replace(
-      '[INSERT QUIZ DESCRIPTION HERE]',
-      contextHeader
-    ).replace('[estimated_questions]', (parseResilientJSON(bulkForm.uploadText)?.questions?.length || 10).toString());
+      '[INSERT SAMPLE QUESTION SET]',
+      bulkForm.uploadText
+    ).replace(
+      '[CURRENT DIFFICULTY]', 
+      QUIZ_DIFFICULTY_LABELS[originalDifficulty] || 'intermediate'
+    ).replace(
+      '[TARGET DIFFICULTY]', 
+      targetDifficultyLabel
+    );
 
     try {
       await navigator.clipboard.writeText(generatedPrompt);
@@ -1443,7 +1638,7 @@ Please use the structure below to generate the new variation. Maintain the same 
     } catch (err) {
       toast({
         title: 'Copy failed',
-        description: 'Could not write to clipboard.',
+        description: `Could not write to clipboard. \n ${err}`,
         variant: 'destructive',
       });
     }
@@ -1467,7 +1662,8 @@ Please use the structure below to generate the new variation. Maintain the same 
 
   const handleCreateNewVariation = () => {
     setShowVariationPromptOptions(true);
-    setTargetVariationDifficulty(2);
+    setOriginalDifficulty(bulkForm.difficulty || 'intermediate');
+    setTargetVariationDifficulty(3);
     
     setBulkForm(prev => ({
       ...prev,
@@ -2006,6 +2202,129 @@ Return only the description text.`;
     }
   };
 
+  const filteredDeleteItems = useMemo(() => {
+    let source = [];
+    if (deleteManagerType === 'course') source = courses;
+    else if (deleteManagerType === 'quiz') source = quizzes;
+    else if (deleteManagerType === 'question') source = questions;
+
+    const term = deleteManagerSearch.toLowerCase().trim();
+    if (!term) return source;
+
+    return source.filter((item) => {
+      const title = (item.title || item.question_text || '').toLowerCase();
+      const id = (item.id || '').toLowerCase();
+      return title.includes(term) || id.includes(term);
+    });
+  }, [deleteManagerType, deleteManagerSearch, courses, quizzes, questions]);
+
+  const handleToggleSelection = (id) => {
+    setSelectedDeleteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = (items) => {
+    setSelectedDeleteIds((prev) => {
+      const allIds = items.map((i) => i.id);
+      const isAllSelected = allIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      
+      if (isAllSelected) {
+        allIds.forEach((id) => next.delete(id));
+      } else {
+        allIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const handleOpenDeleteConfirm = async (itemOrItems, type) => {
+    const isMultiple = Array.isArray(itemOrItems);
+    if (isMultiple) {
+      setMultipleItemsToDelete(itemOrItems);
+      setItemToDelete(null);
+    } else {
+      setItemToDelete(itemOrItems);
+      setMultipleItemsToDelete([]);
+    }
+    
+    setDeleteManagerType(type);
+    setIsConfirmDeleteOpen(true);
+    setDeleteImpact({ summary: 'Calculating impact...' });
+
+    try {
+      if (isMultiple) {
+        setDeleteImpact({ 
+          summary: `Deletes ${itemOrItems.length} selected ${type}s and all their cascading references/data.` 
+        });
+      } else {
+        const impact = await getDeleteImpact(type, itemOrItems.id);
+        setDeleteImpact(impact);
+      }
+    } catch (err) {
+      setDeleteImpact({ summary: 'Failed to calculate impact summary.' });
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    const itemsToProcess = itemToDelete ? [itemToDelete] : multipleItemsToDelete;
+    if (itemsToProcess.length === 0) return;
+
+    setIsSaving(true);
+    const total = itemsToProcess.length;
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const item = itemsToProcess[i];
+        const progress = Math.round((i / total) * 90) + 10;
+        
+        setSavingAction({
+          key: 'hard-delete',
+          label: `Permanently deleting ${deleteManagerType} (${i + 1}/${total}): ${
+            item.title || item.question_text || item.id
+          }...`,
+          progress,
+        });
+
+        if (deleteManagerType === 'course') {
+          await hardDeleteCourse(item.id);
+        } else if (deleteManagerType === 'quiz') {
+          await hardDeleteQuiz(item.id);
+        } else if (deleteManagerType === 'question') {
+          await hardDeleteQuestion(item.id);
+        }
+      }
+
+      toast({
+        title: 'Deletion successful',
+        description: `Permanently removed ${total} ${deleteManagerType}(s).`,
+      });
+
+      // Refresh all data
+      await loadAllContent();
+      setShowRefreshPrompt(true);
+
+      setIsConfirmDeleteOpen(false);
+      setItemToDelete(null);
+      setMultipleItemsToDelete([]);
+      setSelectedDeleteIds(new Set());
+    } catch (err) {
+      console.error('Delete failed:', err);
+      toast({
+        title: 'Delete failed',
+        description: getUserFriendlyErrorMessage(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+      setSavingAction({ key: '', label: '', progress: 0 });
+    }
+  };
+
   const scanForLatexErrors = async (questionsToScan) => {
     if (!questionsToScan || questionsToScan.length === 0) {
       toast({
@@ -2024,138 +2343,6 @@ Return only the description text.`;
 
     const errors = [];
     const total = questionsToScan.length;
-
-    // Helper to detect control characters (ASCII 0-31 except \n, \t, \r)
-    const hasControlChars = (text) => {
-      if (typeof text !== 'string') return false;
-      return /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(text);
-    };
-
-    // Helper to check if LaTeX delimiters are balanced
-    const hasUnbalancedDelimiters = (text) => {
-      if (typeof text !== 'string') return false;
-
-      let inMath = false;
-      let inDisplayMath = false;
-      let i = 0;
-
-      while (i < text.length) {
-        if (text.startsWith('$$', i)) {
-          if (inDisplayMath) {
-            inDisplayMath = false;
-            i += 2;
-          } else if (!inMath) {
-            inDisplayMath = true;
-            i += 2;
-          } else {
-            i++;
-          }
-        } else if (text[i] === '$' && !inDisplayMath) {
-          inMath = !inMath;
-          i++;
-        } else {
-          i++;
-        }
-      }
-
-      return inMath || inDisplayMath;
-    };
-
-    // Extract LaTeX chunks
-    const extractLatexChunks = (text) => {
-      if (typeof text !== 'string') return [];
-      const regex = /\$\$[\s\S]+?\$\$|\$[^\$]+\$/g;
-      return (text.match(regex) || []).map(chunk => chunk.trim());
-    };
-
-    // KaTeX validation
-    const testLatex = (latex) => {
-      try {
-        katex.renderToString(latex, { throwOnError: true });
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    // Detect unicode backslash lookalikes
-    const hasNonStandardBackslash = (latex) => {
-      const backslashLookalikes = /[\uFF3C\u2216\u29F5\u27CD\u27CE]/;
-      return backslashLookalikes.test(latex);
-    };
-
-    // Heuristic detection for suspicious LaTeX patterns
-    const findSuspiciousLatexIssues = (latex) => {
-      const issues = [];
-      if (typeof latex !== 'string') return issues;
-
-      const cleaned = latex.trim();
-
-      // Suspicious stray backslashes
-      const strayBackslashRegex = /\\(?![A-Za-z]+|[\\{}$%&_#^~])/;
-      if (strayBackslashRegex.test(cleaned)) {
-        issues.push({
-          type: 'suspicious_escape',
-          message: 'Contains a suspicious backslash sequence that may not be a valid LaTeX command.'
-        });
-      }
-
-      // Bare command-like words missing backslash
-      const bareCommandWords = [
-        'rightarrow','leftarrow','leftrightarrow','uparrow','downarrow',
-        'cdot','times','div','mid','leq','geq','neq','approx',
-        'pm','mp','infty','partial','nabla','sqrt','frac',
-        'sum','prod','int','lim',
-        'alpha','beta','gamma','delta','epsilon','zeta','eta',
-        'theta','iota','kappa','lambda','mu','nu','xi','pi',
-        'rho','sigma','tau','phi','chi','psi','omega',
-        'sin','cos','tan','cot','sec','csc','ln','log'
-      ];
-
-      const bareWordRegex = new RegExp(
-        String.raw`(^|[^\\])\b(?:${bareCommandWords.join('|')})\b`,
-        'g'
-      );
-
-      const matches = [...cleaned.matchAll(bareWordRegex)];
-      if (matches.length > 0) {
-        const names = [...new Set(matches.map(m => m[0].replace(/^[^A-Za-z]+/, '')))].slice(0,4);
-        issues.push({
-          type: 'suspicious_command',
-          message: `Possible missing backslash before LaTeX command-like text: ${names.join(', ')}.`
-        });
-      }
-
-      // Unbalanced braces
-      const open = (cleaned.match(/{/g) || []).length;
-      const close = (cleaned.match(/}/g) || []).length;
-      if (open !== close) {
-        issues.push({
-          type: 'unbalanced_braces',
-          message: 'Unbalanced { } braces inside the LaTeX expression.'
-        });
-      }
-
-      // \left \right mismatch
-      const leftCount = (cleaned.match(/\\left\b/g) || []).length;
-      const rightCount = (cleaned.match(/\\right\b/g) || []).length;
-      if (leftCount !== rightCount) {
-        issues.push({
-          type: 'suspicious_delimiter_pair',
-          message: 'Mismatched \\left and \\right delimiters.'
-        });
-      }
-
-      // Suspicious superscripts/subscripts
-      if (/(^|[^\\])[_^](?!\{?[A-Za-z0-9\\])/g.test(cleaned)) {
-        issues.push({
-          type: 'suspicious_script',
-          message: 'Found a subscript/superscript marker that may be incomplete.'
-        });
-      }
-
-      return issues;
-    };
 
     for (let i = 0; i < total; i++) {
       const question = questionsToScan[i];
@@ -2202,15 +2389,22 @@ Return only the description text.`;
       for (const field of fieldsToCheck) {
         if (!field.value) continue;
 
-        if (hasControlChars(field.value)) {
+        const originalValue = field.value;
+        const fixedValue = applySafeLatexFixes(originalValue);
+
+        if (fixedValue !== originalValue) {
           questionErrors.push({
             field: field.name,
-            type: 'control_char',
-            message: 'Contains invisible control characters.'
+            type: "safe_fix_available",
+            message: "Safe LaTeX cleanup available.",
+            original: originalValue,
+            fixed: fixedValue
           });
         }
 
-        if (hasUnbalancedDelimiters(field.value)) {
+        const textToScan = fixedValue;
+
+        if (hasUnbalancedDelimiters(textToScan)) {
           questionErrors.push({
             field: field.name,
             type: 'unbalanced_delimiters',
@@ -2218,44 +2412,37 @@ Return only the description text.`;
           });
         }
 
-        const latexChunks = extractLatexChunks(field.value);
+        const latexChunks = extractLatexChunks(textToScan);
 
         for (const chunk of latexChunks) {
           const cleanLatex = chunk.startsWith('$$')
             ? chunk.slice(2, -2)
             : chunk.slice(1, -1);
 
-          if (!testLatex(cleanLatex)) {
-            questionErrors.push({
-              field: field.name,
-              type: 'katex_error',
-              latex: chunk,
-              message: `Invalid LaTeX: ${chunk}`
-            });
-          }
-
-          if (hasNonStandardBackslash(cleanLatex)) {
-            questionErrors.push({
-              field: field.name,
-              type: 'nonstandard_backslash',
-              latex: chunk,
-              message: 'Contains a non-standard backslash character. Replace with a normal \\ for LaTeX commands.'
-            });
-          }
-
-          const heuristicIssues = findSuspiciousLatexIssues(cleanLatex);
-
-          for (const issue of heuristicIssues) {
+          // Heuristic detection first
+          const heuristicIssues = detectLatexHeuristics(cleanLatex);
+          heuristicIssues.forEach(issue => {
             questionErrors.push({
               field: field.name,
               type: issue.type,
               latex: chunk,
               message: issue.message
             });
+          });
+
+          // KaTeX validation second
+          const katexError = validateLatex(cleanLatex);
+          if (katexError) {
+            questionErrors.push({
+              field: field.name,
+              type: 'katex_error',
+              latex: chunk,
+              message: `Invalid LaTeX: ${katexError}`
+            });
           }
         }
 
-        if (field.value.includes('|') && /[^\\]\|[^\\]/.test(field.value)) {
+        if (textToScan.includes('|') && /[^\\]\|[^\\]/.test(textToScan)) {
           questionErrors.push({
             field: field.name,
             type: 'heuristic',
@@ -2263,6 +2450,7 @@ Return only the description text.`;
           });
         }
       }
+
 
       if (questionErrors.length > 0) {
         errors.push({
@@ -2277,7 +2465,10 @@ Return only the description text.`;
         });
       }
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // Yield every 10 questions to keep UI responsive
+      if (i % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
     }
 
     setLatexScanProgress(100);
@@ -2320,11 +2511,18 @@ Return only the description text.`;
         <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Dev Content Dashboard</h1>
-            <p className="text-slate-600 dark:text-slate-400">
-              Edit courses, quizzes, and questions. Manage associations and run bulk upload/edit workflows.
-            </p>
+          <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Dev Content Dashboard</h1>
+              <p className="text-slate-600 dark:text-slate-400">
+                Edit courses, quizzes, and questions. Manage associations and run bulk upload/edit workflows.
+              </p>
+            </div>
+            {showRefreshPrompt ? (
+              <Button type="button" variant="outline" onClick={() => loadAllContent(false)}>
+                Refresh Data
+              </Button>
+            ) : null}
           </div>
 
           <Card className="mb-6 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
@@ -2342,6 +2540,12 @@ Return only the description text.`;
               <p className="mt-4 text-slate-600 dark:text-slate-400">Loading content...</p>
             </div>
           ) : (
+            <DataStatusOverlay
+              isVisible={Boolean(contentLoadError)}
+              title={isConnectionRelatedError(contentLoadError) ? 'Connection issue' : 'Unable to load content data'}
+              description={getUserFriendlyErrorMessage(contentLoadError, 'Content objects could not be loaded.')}
+              onRetry={() => loadAllContent(false)}
+            >
             <Tabs defaultValue="courses">
               <TabsList className="w-full justify-start overflow-x-auto">
                 <TabsTrigger value="courses">Courses</TabsTrigger>
@@ -2351,6 +2555,7 @@ Return only the description text.`;
                 <TabsTrigger value="bulk-questions">Bulk Upload Questions</TabsTrigger>
                 <TabsTrigger value="dedupe">Bulk Remove Duplicates</TabsTrigger>
                 <TabsTrigger value='question-check'>Question Check</TabsTrigger>
+                <TabsTrigger value="delete-manager">Delete Manager</TabsTrigger>
               </TabsList>
 
               <TabsContent value="courses">
@@ -3140,7 +3345,7 @@ Return only the description text.`;
                                      onChange={(e) => setPromptInput(e.target.value)}
                                    />
                                    <div className="flex justify-end mt-2">
-                                      <Button type="button" onClick={handleCopyGeneratedPrompt} size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600">
+                                      <Button type="button" onClick={handleCopyQuizGenerationPrompt} size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-500 dark:hover:bg-indigo-600">
                                          <Copy className="h-4 w-4 mr-1.5" />
                                          Copy Full Prompt
                                       </Button>
@@ -3651,30 +3856,52 @@ Return only the description text.`;
                           </div>
                         ) : (
                           <>
-                            <Button
-                              type='button'
-                              variant='default'
-                              size='sm'
-                              onClick={() => {
-                                const newEditing = {};
-                                displayQuestions.forEach(q => {
-                                  newEditing[q.id] = {
-                                    type: q.type,
-                                    question_text: q.question_text,
-                                    explanation: q.explanation || '',
-                                    metadataJson: JSON.stringify(q.metadata || {}, null, 2),
-                                    difficulty: q.difficulty,
-                                    topic: q.topic,
-                                    skillCategory: q.skillCategory,
-                                    isArchived: q.isArchived,
-                                  };
-                                });
-                                setEditingQuestions(newEditing);
-                                setEditDisplayedQuestions(prev => !prev);
-                              }}
-                            >
-                              {editDisplayedQuestions ? 'View Mode' : 'Edit Mode'}
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                type='button'
+                                variant='default'
+                                size='sm'
+                                onClick={() => {
+                                  if (!editDisplayedQuestions) {
+                                    const newEditing = {};
+                                    displayQuestions.forEach(q => {
+                                      newEditing[q.id] = {
+                                        type: q.type,
+                                        question_text: q.question_text,
+                                        explanation: q.explanation || '',
+                                        metadataJson: JSON.stringify(q.metadata || {}, null, 2),
+                                        difficulty: q.difficulty,
+                                        topic: q.topic,
+                                        skillCategory: q.skillCategory,
+                                        isArchived: q.isArchived,
+                                      };
+                                    });
+                                    setEditingQuestions(newEditing);
+                                  }
+                                  setEditDisplayedQuestions(prev => !prev);
+                                }}
+                              >
+                                {editDisplayedQuestions ? 'View Mode' : 'Edit Mode'}
+                              </Button>
+
+                              {editDisplayedQuestions && Object.keys(editingQuestions).length > 0 && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-800"
+                                  onClick={handleSaveAllQuestionChanges}
+                                  disabled={isSaving}
+                                >
+                                  {isSaving ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  ) : (
+                                    <Plus className="h-4 w-4 mr-2" />
+                                  )}
+                                  Save All Changes
+                                </Button>
+                              )}
+                            </div>
                             <div className="space-y-4 mb-2 max-h-[600px] overflow-y-auto pr-2 md:grid md:grid-cols-2">
                               {displayQuestions.map((question, index) => (
                                 <>
@@ -3779,6 +4006,19 @@ Return only the description text.`;
                                   'Scan for LaTeX Errors'
                                 )}
                               </Button>
+
+                              {latexErrorQuestions.some(q => q.errors.some(e => e.type === 'safe_fix_available')) && (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  className="ml-2 bg-green-50 text-green-700 hover:bg-green-100 border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800"
+                                  onClick={handleFixAllLatex}
+                                >
+                                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                                  Fix All Safe Issues
+                                </Button>
+                              )}
                             </div>
                             {/* Progress bar */}
                             {latexScanProgress > 0 && (
@@ -3825,8 +4065,25 @@ Return only the description text.`;
                                       <CardContent className="py-2">
                                         <ul className="list-disc space-y-1 pl-4 text-xs text-red-700 dark:text-red-300">
                                           {item.errors.map((err, idx) => (
-                                            <li key={idx}>
-                                              <span className="font-mono">[{err.field}]</span> {err.latex}
+                                            <li key={idx} className="flex flex-col gap-1">
+                                              <div>
+                                                <span className="font-mono">[{err.field}]</span> {err.message || err.latex}
+                                              </div>
+                                              {err.type === "safe_fix_available" && (
+                                                <div className="flex items-center gap-2 mt-1">
+                                                   <Badge variant="outline" className="bg-slate-200 text-slate-700 text-[10px] py-0">
+                                                      Fix: {truncateText(err.fixed, 40)}
+                                                   </Badge>
+                                                   <Button 
+                                                      size="sm" 
+                                                      variant="link" 
+                                                      className="h-auto p-0 text-[10px] text-indigo-600 font-bold"
+                                                      onClick={() => handleApplySafeFix(item.questionId, err.field, err.fixed)}
+                                                   >
+                                                      Apply Safe Fix
+                                                   </Button>
+                                                </div>
+                                              )}
                                             </li>
                                           ))}
                                         </ul>
@@ -3851,11 +4108,240 @@ Return only the description text.`;
                   </CardContent>
                 </Card>
               </TabsContent>
+
+              <TabsContent value="delete-manager">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Delete Manager</CardTitle>
+                    <CardDescription>
+                      Permanently delete content and all its linked data. This is a TRUE hard delete system.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="flex flex-col md:flex-row gap-4 items-end">
+                      <div className="w-full md:w-48">
+                        <Label>Content Type</Label>
+                        <select
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm dark:border-slate-800 dark:bg-slate-950"
+                          value={deleteManagerType}
+                          onChange={(e) => {
+                            setDeleteManagerType(e.target.value);
+                            setDeleteManagerSearch('');
+                            setSelectedDeleteIds(new Set());
+                          }}
+                        >
+                          <option value="course">Courses</option>
+                          <option value="quiz">Quizzes</option>
+                          <option value="question">Questions</option>
+                        </select>
+                      </div>
+                      <div className="flex-1">
+                        <Label>Search by Title or ID</Label>
+                        <div className="relative mt-1">
+                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <Input
+                            className="pl-9"
+                            placeholder={`Search ${deleteManagerType}s...`}
+                            value={deleteManagerSearch}
+                            onChange={(e) => setDeleteManagerSearch(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      {selectedDeleteIds.size > 0 && (
+                        <div className="flex items-center gap-2 animate-in slide-in-from-right-4">
+                           <Button 
+                            variant="destructive" 
+                            size="sm"
+                            className="bg-red-600 hover:bg-red-700"
+                            onClick={() => {
+                              const items = filteredDeleteItems.filter(i => selectedDeleteIds.has(i.id));
+                              handleOpenDeleteConfirm(items, deleteManagerType);
+                            }}
+                           >
+                             <Trash2 className="h-4 w-4 mr-2" />
+                             Delete Selected ({selectedDeleteIds.size})
+                           </Button>
+                           <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => setSelectedDeleteIds(new Set())}
+                           >
+                             Clear
+                           </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-md border border-slate-200 dark:border-slate-800">
+                      <div className="max-h-[500px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                        {filteredDeleteItems.length === 0 ? (
+                          <div className="p-8 text-center text-slate-500">
+                            No {deleteManagerType}s found matching your search.
+                          </div>
+                        ) : (
+                          <table className="w-full text-sm">
+                            <thead className="sticky top-0 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-10">
+                              <tr>
+                                <th className="px-4 py-2 text-left w-10">
+                                  <input 
+                                    type="checkbox" 
+                                    className="rounded border-slate-300"
+                                    checked={filteredDeleteItems.length > 0 && filteredDeleteItems.every(i => selectedDeleteIds.has(i.id))}
+                                    onChange={() => handleSelectAll(filteredDeleteItems)}
+                                  />
+                                </th>
+                                <th className="px-4 py-2 text-left font-medium">Title / ID</th>
+                                <th className="px-4 py-2 text-left font-medium">Type</th>
+                                <th className="px-4 py-2 text-right font-medium">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {filteredDeleteItems.map((item) => (
+                                <tr key={item.id} className={`hover:bg-slate-50/50 dark:hover:bg-slate-900/50 ${selectedDeleteIds.has(item.id) ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''}`}>
+                                  <td className="px-4 py-3">
+                                    <input 
+                                      type="checkbox" 
+                                      className="rounded border-slate-300"
+                                      checked={selectedDeleteIds.has(item.id)}
+                                      onChange={() => handleToggleSelection(item.id)}
+                                    />
+                                  </td>
+                                  <td className="px-4 py-3 cursor-pointer" onClick={() => handleToggleSelection(item.id)}>
+                                    <div className="font-medium text-slate-900 dark:text-slate-100">
+                                      {item.title || truncateText(item.question_text, 80) || 'Untitled'} {item.difficulty ? `- ${QUIZ_DIFFICULTY_LABELS[item.difficulty]}` : ''}
+                                    </div>
+                                    <div className="text-xs text-slate-500 font-mono">{item.id}</div>
+                                  </td>
+                                  <td className="px-4 py-3 capitalize text-slate-600 dark:text-slate-400">
+                                    {deleteManagerType}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenDeleteConfirm(item, deleteManagerType);
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
+            </DataStatusOverlay>
           )}
 
-          {isSaving ? (
-            <Card className="mb-6 border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30">
+          {isConfirmDeleteOpen && (
+            <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 md:gap-8 p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+              <Card className="w-full max-w-md shadow-2xl animate-in zoom-in duration-300">
+                <CardHeader>
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-3 bg-red-100 dark:bg-red-950/50 rounded-full">
+                      <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400" />
+                    </div>
+                    <CardTitle className="text-xl">Confirm Hard Delete</CardTitle>
+                  </div>
+                  <CardDescription className="text-slate-900 dark:text-slate-100 font-medium">
+                    You are about to permanently delete this {deleteManagerType}:
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {itemToDelete ? (
+                    <div className="p-3 bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-800">
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                        {itemToDelete.title || truncateText(itemToDelete.question_text, 100) || 'Untitled'} {itemToDelete.difficulty ? `- ${QUIZ_DIFFICULTY_LABELS[itemToDelete.difficulty]}` : ''}
+                      </div>
+                      <div className="text-xs text-slate-500 font-mono mt-1">{itemToDelete.id}</div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-100 dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-800">
+                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                        {multipleItemsToDelete.length} {deleteManagerType}s selected
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1 max-h-24 overflow-y-auto">
+                        {multipleItemsToDelete.slice(0, 5).map(item => (
+                          <div key={item.id} className="truncate">
+                            • {item.title || truncateText(item.question_text, 40) || item.id}
+                          </div>
+                        ))}
+                        {multipleItemsToDelete.length > 5 && (
+                          <div className="text-indigo-600 font-medium">...and {multipleItemsToDelete.length - 5} more</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-md border border-amber-200 dark:border-amber-900/50 text-sm text-amber-900 dark:text-amber-200">
+                    <div className="font-bold flex items-center gap-2 mb-1 underline">
+                       Impact Summary:
+                    </div>
+                    {deleteImpact?.summary || 'Calculating cascading impact...'}
+                  </div>
+
+                  <p className="text-xs text-red-600 dark:text-red-400 font-bold italic border-l-2 border-red-500 pl-2">
+                    CRITICAL: This action is irreversible. All linked attempts, answers, and references will be permanently purged.
+                  </p>
+
+                  <div className="flex gap-3 justify-end mt-6">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsConfirmDeleteOpen(false)}
+                      disabled={isSaving}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      className="bg-red-600 hover:bg-red-700 text-white dark:bg-red-700 dark:hover:bg-red-800"
+                      onClick={handleConfirmDelete}
+                      disabled={isSaving}
+                    >
+                      {isSaving ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4 mr-2" />
+                      )}
+                      Permanently Delete
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+              {isSaving ? (
+                <Card className="mb-6 w-3/4 md:w-1/3 border-red-300 bg-blue-50 dark:border-red-800 dark:bg-red-950/30">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base text-red-900 dark:text-red-200">Deleting Data</CardTitle>
+                    <CardDescription className="text-red-800 dark:text-red-300">
+                      {savingAction.label || 'Processing update...'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-red-100 dark:bg-red-900">
+                      <div
+                        className="h-full bg-red-600 transition-all duration-200 dark:bg-red-400"
+                        style={{ width: `${clampedSavingProgress}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-red-700 dark:text-red-300">
+                      {Math.round(clampedSavingProgress)}%
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : null}              
+            </div>
+          )}
+
+          {(isSaving && !isConfirmDeleteOpen) ? (
+            <Card className="mt-4 md:mt-6 border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base text-blue-900 dark:text-blue-200">Action in progress</CardTitle>
                 <CardDescription className="text-blue-800 dark:text-blue-300">

@@ -5,6 +5,8 @@ import { ThemeProvider } from '@/context/ThemeContext.jsx';
 import { Toaster } from '@/components/ui/toaster.jsx';
 import WallpaperToggleButton from '@/components/layout/WallpaperToggleButton.jsx';
 import SiteFooter from '@/components/layout/SiteFooter.jsx';
+import FeedbackLauncher from '@/components/feedback/FeedbackLauncher.jsx';
+import { FeedbackProvider } from '@/context/FeedbackContext.jsx';
 const Login = lazy(() => import('@/pages/Login.jsx'));
 const Register = lazy(() => import('@/pages/Register.jsx'));
 const AuthPrompt = lazy(() => import('@/pages/AuthPrompt.jsx'));
@@ -19,6 +21,7 @@ const CourseDetailPage = lazy(() => import('@/pages/CourseDetailPage.jsx'));
 const QuizDetailPage = lazy(() => import('@/pages/QuizDetailPage.jsx'));
 const DevContentDashboard = lazy(() => import('@/pages/DevContentDashboard.jsx'));
 const DevUsersDashboard = lazy(() => import('@/pages/DevUsersDashboard.jsx'));
+const DevFeedbackDashboard = lazy(() => import('@/pages/DevFeedbackDashboard.jsx'));
 
 const PageFallback = () => (
   <div className="min-h-screen flex items-center justify-center px-4">
@@ -36,67 +39,75 @@ function App() {
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
-          <Routes>
-            <Route path="/" element={renderRoute(<LandingPage />)} />
-            <Route path="/auth-prompt" element={renderRoute(<AuthPrompt />)} />
-            <Route path="/login" element={renderRoute(<Login />)} />
-            <Route path="/register" element={renderRoute(<Register />)} />
-            
-            <Route
-              path="/quizzes"
-              element={renderRoute(<QuizList />)}
-            />
+          <FeedbackProvider>
+            <Routes>
+              <Route path="/" element={renderRoute(<LandingPage />)} />
+              <Route path="/auth-prompt" element={renderRoute(<AuthPrompt />)} />
+              <Route path="/login" element={renderRoute(<Login />)} />
+              <Route path="/register" element={renderRoute(<Register />)} />
 
-            <Route
-              path="/courses"
-              element={renderRoute(<CoursesPage />)}
-            />
+              <Route
+                path="/quizzes"
+                element={renderRoute(<QuizList />)}
+              />
 
-            <Route
-              path="/courses/:id"
-              element={renderRoute(<CourseDetailPage />)}
-            />
+              <Route
+                path="/courses"
+                element={renderRoute(<CoursesPage />)}
+              />
 
-            <Route
-              path="/quizzes/:id"
-              element={renderRoute(<QuizDetailPage />)}
-            />
+              <Route
+                path="/courses/:id"
+                element={renderRoute(<CourseDetailPage />)}
+              />
 
-            <Route
-              path="/dev/content"
-              element={renderRoute(<DevContentDashboard />)}
-            />
+              <Route
+                path="/quizzes/:id"
+                element={renderRoute(<QuizDetailPage />)}
+              />
 
-            <Route
-              path="/dev/users"
-              element={renderRoute(<DevUsersDashboard />)}
-            />
-            
-            <Route
-              path="/quiz/:id/ready"
-              element={renderRoute(<QuizReady />)}
-            />
+              <Route
+                path="/dev/content"
+                element={renderRoute(<DevContentDashboard />)}
+              />
 
-            <Route
-              path="/quiz/:id"
-              element={renderRoute(<QuizPage />)}
-            />
-            
-            <Route
-              path="/results/:attemptId"
-              element={renderRoute(<ResultsPage />)}
-            />
+              <Route
+                path="/dev/users"
+                element={renderRoute(<DevUsersDashboard />)}
+              />
 
-            <Route
-              path="/insights"
-              element={renderRoute(<ProgressHistoryPage />)}
-            />
-            
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-          <SiteFooter />
-          <WallpaperToggleButton />
-          <Toaster />
+              <Route
+                path="/dev/feedback"
+                element={renderRoute(<DevFeedbackDashboard />)}
+              />
+
+              <Route
+                path="/quiz/:id/ready"
+                element={renderRoute(<QuizReady />)}
+              />
+
+              <Route
+                path="/quiz/:id"
+                element={renderRoute(<QuizPage />)}
+              />
+
+              <Route
+                path="/results/:attemptId"
+                element={renderRoute(<ResultsPage />)}
+              />
+
+              <Route
+                path="/insights"
+                element={renderRoute(<ProgressHistoryPage />)}
+              />
+
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+            <SiteFooter />
+            <FeedbackLauncher />
+            <WallpaperToggleButton />
+            <Toaster />
+          </FeedbackProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>

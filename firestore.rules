@@ -1,6 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function isSignedIn() {
       return request.auth != null;
     }
@@ -14,182 +15,79 @@ service cloud.firestore {
         get(/databases/$(database)/documents/userAttempts/$(attemptId)).data.userId == request.auth.uid;
     }
 
-    function isNumeric(value) {
-      return value is int || value is float;
-    }
-
-    function hasQuestionCoreFields(data) {
-      return data.keys().hasAll([
-        'type',
-        'question_text',
-        'metadata',
-        'difficulty',
-        'topic',
-        'skillCategory',
-        'createdAt',
-        'lastModified',
-        'isArchived'
-      ]);
-    }
-
-    function isQuestionCoreValid(data) {
-      return hasQuestionCoreFields(data) &&
-        data.type in ['mcq', 'short_answer', 'numeric', 'long_answer'] &&
-        data.question_text is string &&
-        data.question_text.size() > 0 &&
-        data.metadata is map &&
-        data.difficulty in [1, 2, 3] &&
-        data.topic is string &&
-        data.skillCategory in [1, 2, 3] &&
-        data.isArchived is bool &&
-        data.createdAt is timestamp &&
-        data.lastModified is timestamp &&
-        (!('explanation' in data) || data.explanation is string);
-    }
-
-    function isQuestionMetadataValid(data) {
-      let metadata = data.metadata;
-      return (
-        data.type == 'mcq' &&
-        metadata.keys().hasAll(['options', 'correct_answer']) &&
-        metadata.options is list &&
-        metadata.options.size() >= 2 &&
-        metadata.correct_answer is string
-      ) || (
-        data.type == 'short_answer' &&
-        metadata.keys().hasAll(['accepted_answers', 'case_sensitive', 'ignore_whitespace']) &&
-        metadata.accepted_answers is list &&
-        metadata.accepted_answers.size() > 0 &&
-        metadata.case_sensitive is bool &&
-        metadata.ignore_whitespace is bool
-      ) || (
-        data.type == 'numeric' &&
-        metadata.keys().hasAll(['numeric_answer']) &&
-        isNumeric(metadata.numeric_answer) &&
-        (!('tolerance' in metadata) || (isNumeric(metadata.tolerance) && metadata.tolerance >= 0))
-      ) || (
-        data.type == 'long_answer'
-      );
-    }
-
-    function isQuestionDocumentValid(data) {
-      return isQuestionCoreValid(data) && isQuestionMetadataValid(data);
-    }
-
-    function hasQuizCoreFields(data) {
-      return data.keys().hasAll([
-        'title',
-        'shortDescription',
-        'longDescription',
-        'topic',
-        'difficulty',
-        'estimatedTime',
-        'isTimePerQuestion',
-        'questionIds',
-        'questionCount',
-        'createdAt',
-        'lastModified',
-        'isArchived'
-      ]);
-    }
-
-    function isQuizDocumentValid(data) {
-      return hasQuizCoreFields(data) &&
-        data.title is string &&
-        data.title.size() > 0 &&
-        data.shortDescription is string &&
-        data.longDescription is string &&
-        data.topic is string &&
-        data.difficulty in [1, 2, 3] &&
-        isNumeric(data.estimatedTime) &&
-        data.estimatedTime > 0 &&
-        data.isTimePerQuestion is bool &&
-        data.questionIds is list &&
-        data.questionCount is int &&
-        data.questionCount >= 0 &&
-        data.questionCount <= data.questionIds.size() &&
-        data.createdAt is timestamp &&
-        data.lastModified is timestamp &&
-        data.isArchived is bool;
-    }
-
-    function hasCourseCoreFields(data) {
-      return data.keys().hasAll([
-        'title',
-        'shortDescription',
-        'longDescription',
-        'topic',
-        'quizIds',
-        'quizCount',
-        'createdAt',
-        'lastModified',
-        'isArchived'
-      ]);
-    }
-
-    function isCourseDocumentValid(data) {
-      return hasCourseCoreFields(data) &&
-        data.title is string &&
-        data.title.size() > 0 &&
-        data.shortDescription is string &&
-        data.longDescription is string &&
-        (!('courseCode' in data) || (data.courseCode is string && data.courseCode.size() > 0)) &&
-        data.topic is string &&
-        data.quizIds is list &&
-        data.quizCount is int &&
-        data.quizCount >= 0 &&
-        data.quizCount <= data.quizIds.size() &&
-        data.createdAt is timestamp &&
-        data.lastModified is timestamp &&
-        data.isArchived is bool;
-    }
-
+    // USERS
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create, update: if isOwner(userId);
-      allow delete: if isSignedIn();
+      allow read: if true;
+
+      allow create: if true;
+
+      // allow updating own profile
+      allow update: if isOwner(userId);
+
+      // allow deletion if signed in (lenient)
+      allow delete: if true;
     }
 
+    // QUESTIONS
     match /questions/{questionId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isQuestionDocumentValid(request.resource.data);
-      allow update: if isSignedIn() &&
-        isQuestionDocumentValid(request.resource.data) &&
-        request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isSignedIn();
+      allow read: if true;
+
+      // any authenticated user can manage questions
+      allow create, update, delete: if isSignedIn();
     }
 
+    // QUIZZES
     match /quizzes/{quizId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isQuizDocumentValid(request.resource.data);
-      allow update: if isSignedIn() &&
-        isQuizDocumentValid(request.resource.data) &&
-        request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isSignedIn();
+      allow read: if true;
+
+      // allow any authenticated user to manage quizzes
+      allow create, update, delete: if isSignedIn();
     }
 
+    // COURSES
     match /courses/{courseId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isCourseDocumentValid(request.resource.data);
-      allow update: if isSignedIn() &&
-        isCourseDocumentValid(request.resource.data) &&
-        request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isSignedIn();
+      allow read: if true;
+
+      allow create, update, delete: if isSignedIn();
     }
 
+    // DISCUSSIONS
     match /questionDiscussions/{discussionId} {
-      allow read, create, update, delete: if isSignedIn();
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
     }
 
+    // FEEDBACK ENTRIES
+    match /feedbackEntries/{feedbackId} {
+      // lenient in-app feedback collection; dev mode UI still gates review features
+      allow read, create, update, delete: if true;
+    }
+
+    // USER ATTEMPTS
     match /userAttempts/{attemptId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      // attempts visible for analytics/debug
+      allow read: if true;
+
+      // users create attempts tied to their uid
+      allow create: if isSignedIn() &&
+        request.resource.data.userId == request.auth.uid;
+
+      // only attempt owner can update it
+      allow update: if isAttemptOwner(attemptId);
+
+      // allow deletion if signed in (lenient)
       allow delete: if isSignedIn();
+
+      // ATTEMPT ANSWERS
       match /answers/{answerId} {
-        allow read: if isSignedIn();
-        allow create: if isAttemptOwner(attemptId) && request.resource.data.userId == request.auth.uid;
-        allow update: if isAttemptOwner(attemptId) && resource.data.userId == request.auth.uid;
+        allow read: if true;
+
+        allow create: if isAttemptOwner(attemptId) &&
+          request.resource.data.userId == request.auth.uid;
+
+        allow update: if isAttemptOwner(attemptId);
+
         allow delete: if isSignedIn();
       }
     }

@@ -1,0 +1,6 @@
+{
+  "questionId": "linked_question_id", // Matches question doc id
+  "userId": "linked_user_id", // Must match attempt owner
+  "answer": "String", // Raw submitted value
+  "answeredAt": "Timestamp.now()" // Last time answer was upserted
+}

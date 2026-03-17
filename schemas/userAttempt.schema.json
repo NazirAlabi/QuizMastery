@@ -1,0 +1,33 @@
+{
+  "userId": "linked_user_id", // Owner of this attempt document
+  "quizId": "linked_quiz_id", // Quiz attempted
+  "startedAt": "Timestamp.now()", // Attempt start time
+  "status": "in_progress | submitted | abandoned", // Current lifecycle state
+  "score": 78, // Present when submitted
+  "submittedAt": "Timestamp.now()", // Present when submitted
+  "abandonedAt": "Timestamp.now()", // Present when abandoned
+  "timingSnapshot": {
+    "enabled": true, // true for timed mode
+    "durationSeconds": 900, // Remaining/allocated time for this attempt
+    "perQuestion": false, // true when timing is per-question
+    "mode": "timed | untimed",
+    "speedMultiplier": 1,
+    "baseDurationSeconds": 900
+  },
+  "attemptConfig": {
+    "mode": "timed | untimed",
+    "speedMultiplier": 1,
+    "allowBreaks": false,
+    "baseDurationSeconds": 900,
+    "effectiveDurationSeconds": 900,
+    "configuredAt": "Timestamp.now()"
+  },
+  "questionOrder": ["questionId1", "questionId2"], // Stable random order used during this attempt
+  "analysis": {
+    "correctAnswers": 8,
+    "gradedQuestionsCount": 10,
+    "skillBreakdown": {},
+    "difficultyBreakdown": {},
+    "topicBreakdown": []
+  }
+}

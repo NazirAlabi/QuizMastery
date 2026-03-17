@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BookOpen, FlaskConical, GraduationCap, LogIn, Rocket } from 'lucide-react';
+import { ArrowRight, BookOpen, FlaskConical, GraduationCap, LogIn, MessageSquareText, Rocket } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -53,6 +53,12 @@ const LandingPage = () => {
           description: 'Review users, guest activity, and cleanup operations.',
           to: '/dev/users',
           icon: FlaskConical,
+        },
+        {
+          title: 'Dev Feedback',
+          description: 'Review incoming feedback and categorize items.',
+          to: '/dev/feedback',
+          icon: MessageSquareText,
         }
       );
     }
@@ -76,8 +82,11 @@ const LandingPage = () => {
 
         <main className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 space-y-8">
           <section className="relative overflow-hidden rounded-2xl border border-slate-300 bg-gradient-to-br from-indigo-100 via-white to-cyan-100 p-6 md:p-10 dark:border-slate-700 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900">
-            <div className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-indigo-400/20 blur-3xl dark:bg-indigo-500/20" />
-            <div className="pointer-events-none absolute -bottom-16 left-1/3 h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl dark:bg-cyan-500/20" />
+            <div className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-indigo-400/20 blur-3xl motion-hero-float-a dark:bg-indigo-500/20" />
+            <div className="pointer-events-none absolute -bottom-16 left-1/3 h-48 w-48 rounded-full bg-cyan-400/20 blur-3xl motion-hero-float-b dark:bg-cyan-500/20" />
+            <div className="pointer-events-none absolute top-8 left-10 h-3 w-3 rounded-full bg-indigo-300/70 motion-hero-twinkle dark:bg-indigo-200/70" />
+            <div className="pointer-events-none absolute bottom-10 right-1/4 h-2 w-2 rounded-full bg-cyan-300/80 motion-hero-twinkle-delay dark:bg-cyan-200/80" />
+            <div className="pointer-events-none absolute top-1/2 right-8 h-2 w-2 rounded-full bg-sky-300/80 motion-hero-twinkle dark:bg-sky-200/70" />
 
             <div className="relative z-10 max-w-3xl space-y-4">
               <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">

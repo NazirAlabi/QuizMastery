@@ -1,0 +1,260 @@
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\aqus.json
+
+{
+    "title" : "Title of the quiz",
+    "estimatedTime" : integer,//optional
+    "questions" : [] //according to question upload schema
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\course.schema.json
+
+{
+  "title": "Data Structures 101", // Course name shown to learners/admins
+  "shortDescription": "An introductory course covering arrays, linked lists, stacks, queues, and hash tables", // Course overview text
+  "longDescription": "This course covers the core concepts of arrays, linked lists, stacks, queues, and hash tables. It is a great introduction to data structures and algorithms.", // Detailed course description
+  "courseCode": "CS101", // Optional unique short code for filtering/search
+  "topic": "Data Structures", // Course domain/category
+  "quizIds": ["quiz1", "quiz2", "quiz3"], // Referenced quiz document IDs included in this course
+  "quizCount": 0, // Dynamically computed count of non-archived quizzes
+  "createdAt": "FieldValue.serverTimestamp()", // Server-side creation timestamp
+  "lastModified": "FieldValue.serverTimestamp()", // Server-side update timestamp
+  "isArchived": false // Soft-delete flag; archived courses are excluded from active views
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\discussion.schema.json
+
+{
+    "question_id": "linked_questiond_id",
+    "createdAt" : "FieldValue.serverTimestamp()",
+    "lastModified" : "FieldValue.serverTimestamp()",
+    "comments" :   [
+        {
+            "userId" : "linked_user_id",
+            "displayName" : "displayName | email | Anonymous | Admin",
+            "comment_text" : "The way it is solve is independent of the magnitude of the values given",
+            "upvotes" : "integer",
+            "downvotes" : "integer",
+            "admin_rated": false,
+            "createdAt" : "FieldValue.serverTimestamp()",
+            "lastModified" : "FieldValue.serverTimestamp()",
+            "isArchived" : false
+        },
+        {
+            "userId" : "linked_user_id",
+            "displayName" : "displayName | email | Anonymous | Admin",
+            "comment_text" : "I didn't understand it because of the notation. Can you please explain it in a different way?",
+            "upvotes" : "integer",
+            "downvotes" : "integer",
+            "admin_rated": false,
+            "createdAt" : "FieldValue.serverTimestamp()",
+            "lastModified" : "FieldValue.serverTimestamp()",
+            "isArchived" : false
+        }
+    ]
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\question.schema.json
+
+{
+  "type": "mcq | short_answer | numeric | long_answer", // Question response type enum
+  "question_text": "String", // Prompt shown to the learner
+  "metadata": { // Type-specific grading/configuration object
+    "options": [ // Required when type = "mcq"
+      { "id": "A", "text": "Option A" }, // Option id (submitted value) and visible label
+      { "id": "B", "text": "Option B" }
+    ],
+    "correct_answer": "A", // Required when type = "mcq"; must match an option id
+    "accepted_answers": ["answer1", "answer2"], // Required when type = "short_answer"
+    "case_sensitive": false, // For short answers: true keeps letter case significant
+    "ignore_whitespace": true, // For short answers: true strips/ignores spaces before compare
+    "numeric_answer": 42, // Required when type = "numeric"
+    "tolerance": 0.01 // Optional numeric margin of error for numeric grading
+  },
+  "difficulty": "1 | 2 | 3", // 1=easy, 2=intermediate, 3=advanced
+  "topic": "String", // Subject area for grouping/reporting
+  "skillCategory": "1 | 2 | 3", // 1=recall, 2=conceptual, 3=memorization
+  "explanation": "String", // Optional rationale shown after answering/review
+  "createdAt": "FieldValue.serverTimestamp()", // Server-side creation timestamp
+  "lastModified": "FieldValue.serverTimestamp()", // Server-side update timestamp
+  "isArchived": false // Soft-delete flag; archived questions are excluded from active use
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\question.upload.json.schema.json
+
+// general structure
+// [
+//   {
+//     "type": "mcq | short_answer | numeric | long_answer",
+//     "question_text": "string",
+//     "metadata": { ...type-specific fields... },
+//     "difficulty": 1 | 2 | 3,
+//     "topic": "string",
+//     "skillCategory": 1 | 2 | 3,
+//     "explanation": "string (optional)"
+//   }
+// ]
+
+// for mcq
+// "type": "mcq",
+// "metadata": {
+//   "options": [{ "id": "A", "text": "..." }],
+//   "correct_answer": "A"
+// }
+
+// for short answer
+// "type": "short_answer",
+// "metadata": {
+//   "accepted_answers": ["stack", "a stack"],
+//   "case_sensitive": false,
+//   "ignore_whitespace": true
+// }
+
+// for numeric
+// "type": "numeric",
+// "metadata": {
+//   "numeric_answer": 3.14,
+//   "tolerance": 0.01
+// }
+
+// for long answer
+// "type": "long_answer",
+// "metadata": {}
+
+// example
+{"questions": [
+  {
+    "type": "mcq",
+    "question_text": "What is the time complexity of binary search?",
+    "metadata": {
+      "options": [
+        { "id": "A", "text": "O(n)" },
+        { "id": "B", "text": "O(log n)" },
+        { "id": "C", "text": "O(n log n)" },
+        { "id": "D", "text": "O(1)" }
+      ],
+      "correct_answer": "B"
+    },
+    "difficulty": 1,
+    "topic": "Algorithms",
+    "skillCategory": 2,
+    "explanation": "Binary search halves the search space each iteration."
+  }
+]}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\quiz.schema.json
+
+{
+  "title": "Data Structures Fundamentals", // Quiz name displayed in list/detail views
+  "shortDescription": "Master the core concepts of arrays, linked lists, stacks, queues, and hash tables", // Summary of what this quiz covers
+  "longDescription": "This quiz covers the core concepts of arrays, linked lists, stacks, queues, and hash tables. It is a great introduction to data structures and algorithms.", // Detailed quiz description
+  "topic": "Data Structures", // Primary subject/category for the quiz
+  "difficulty": 2, // 1=easy, 2=intermediate, 3=advanced
+  "estimatedTime": 25, // Duration in minutes (total or per-question based on flag below)
+  "isTimePerQuestion": false, // true=estimatedTime applies per question, false=applies to full quiz
+  "questionIds": ["q1", "q2", "q3"], // Ordered references to question document IDs
+  "questionCount": 0, // Dynamically computed count of non-archived questions
+  "createdAt": "FieldValue.serverTimestamp()", // Server-side creation timestamp
+  "lastModified": "FieldValue.serverTimestamp()", // Server-side update timestamp
+  "isArchived": false // Soft-delete flag; archived quizzes are hidden from active flows
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\quiz.upload.schema.json
+
+{
+    "title" : "Title of the quiz",
+    "topic" : "overall quiz topic", //optional(default to "")
+    "difficulty" : integer, //autocalculated from the questions with the autocalculation functions
+    "estimatedTime" : integer,//optional(default to 1 min per 2 questions and make is per question default to true)
+    "timeIsPerQuestion" :boolean, //optional(default to false)
+    "shortDescription" : "string", //optional(default to "")
+    "longDescription":"string", //optional(default to "")
+    "questions" : [] //according to question upload schema
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\user.schema.json
+
+{
+  "displayName": "String", // Required for all users
+  "email": "String | null", // null = guest, string = registered
+  "createdAt": "FieldValue.serverTimestamp()", // Server-side creation timestamp
+  "lastActiveAt": "FieldValue.serverTimestamp()", // Optional: server-side last activity timestamp
+  "isGuest" : "bool" //true if guest, false if registered
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\userAttempt.schema.json
+
+{
+  "userId": "linked_user_id",
+  "quizId": "linked_quiz_id",
+  "startedAt": "Timestamp.now()",
+  "status": "in_progress | submitted | abandoned",
+  "score": 78,
+  "submittedAt": "Timestamp.now()",
+  "abandonedAt": "Timestamp.now()",
+  "timingSnapshot": {
+    "enabled": true,
+    "durationSeconds": 900,
+    "perQuestion": false,
+    "mode": "timed | untimed",
+    "speedMultiplier": 1,
+    "baseDurationSeconds": 900
+  },
+  "attemptConfig": {
+    "mode": "timed | untimed",
+    "speedMultiplier": 1,
+    "allowBreaks": false,
+    "baseDurationSeconds": 900,
+    "effectiveDurationSeconds": 900,
+    "configuredAt": "Timestamp.now()"
+  },
+  "questionOrder": ["questionId1", "questionId2"],
+  "analysis": {}
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\userAttempt.answer.schema.json
+
+{
+  "questionId": "linked_question_id",
+  "userId": "linked_user_id",
+  "answer": "String",
+  "answeredAt": "Timestamp.now()"
+}
+
+
+# File: C:\Users\Nazir Alabi\webdev\uqm\schemas\feedback.schema.json
+
+{
+  "reason": "String | null",
+  "urgency": "low | medium | high | null",
+  "category": "technical | content | account | request | other | null",
+  "subject": "String | null",
+  "details": "String | null",
+  "contextKey": "global | courses_page | quiz_attempt | question_card | quiz_detail | course_detail",
+  "contextLabel": "String | null",
+  "subjectType": "quiz | question | course | page | null",
+  "subjectId": "String | null",
+  "sourcePath": "/courses",
+  "sourceSearch": "?foo=bar",
+  "status": "new | triaged | in_progress | resolved | dismissed",
+  "triageNotes": "String | null",
+  "tags": ["bug", "content"],
+  "createdAt": "FieldValue.serverTimestamp()",
+  "updatedAt": "FieldValue.serverTimestamp()",
+  "user": {
+    "uid": "String | null",
+    "email": "String | null",
+    "displayName": "String | null",
+    "isGuest": true
+  }
+}

@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
 import { clearUserData } from '@/api/api.js';
+import { useTheme } from '@/context/ThemeContext.jsx';
 import { X } from 'lucide-react';
 
 const SETTINGS_SECTIONS = [
@@ -18,10 +19,16 @@ const SETTINGS_SECTIONS = [
     title: 'Data',
     description: 'Clear your quiz activity.',
   },
+  {
+    id: 'appearance',
+    title: 'Appearance',
+    description: 'Adjust theme and wallpaper settings.',
+  },
 ];
 
 const SettingsModal = ({ open, onClose }) => {
   const { user, updateUserDisplayName } = useAuth();
+  const { wallpaperSet, toggleWallpaper, uiScale, setUiScale } = useTheme();
   const { toast } = useToast();
   const [activeSection, setActiveSection] = useState(SETTINGS_SECTIONS[0].id);
   const [nameDraft, setNameDraft] = useState('');
@@ -200,6 +207,60 @@ const SettingsModal = ({ open, onClose }) => {
                   >
                     {isClearing ? 'Clearing...' : 'Clear All Data'}
                   </Button>
+                </div>
+              </div>
+            )}
+            {activeSection === 'appearance' && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Appearance</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    Choose your preferred wallpaper pattern.
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-slate-300 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    Current wallpaper: <strong>{wallpaperSet === 'zigzag' ? 'Zig-zag' : 'Subtle prism'}</strong>
+                  </p>
+                  <Button type="button" className="mt-3" onClick={toggleWallpaper}>
+                    Switch To {wallpaperSet === 'zigzag' ? 'Subtle Prism' : 'Zig-zag'}
+                  </Button>
+                  <p className="mt-2 hidden text-xs text-slate-500 dark:text-slate-400 md:block">
+                    Tip: On medium and larger screens, a quick wallpaper button is also visible on the page.
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-slate-300 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    UI size mode
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <Button
+                      type="button"
+                      variant={uiScale === 'compact' ? 'default' : 'outline'}
+                      onClick={() => setUiScale('compact')}
+                    >
+                      Compact
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={uiScale === 'default' ? 'default' : 'outline'}
+                      onClick={() => setUiScale('default')}
+                    >
+                      Default
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={uiScale === 'comfortable' ? 'default' : 'outline'}
+                      onClick={() => setUiScale('comfortable')}
+                    >
+                      Comfortable
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Mobile defaults to Comfortable for better readability and reduced Safari auto-zoom.
+                  </p>
                 </div>
               </div>
             )}

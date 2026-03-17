@@ -1,21 +1,31 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
+import { Eye, EyeOff, GraduationCap } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth.js';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { GraduationCap } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { appendReturnUrl, resolveReturnUrl } from '@/utils/returnUrl.js';
 import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
 
 const Register = () => {
+  const [staySignedIn, setStaySignedIn] = useState(() => {
+    try {
+      if (typeof window === 'undefined') return true;
+      return window.localStorage.getItem('quizmaster_auth_persistence_pref_v1') !== 'session';
+    } catch {
+      return true;
+    }
+  });
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { register, isGuestUser } = useAuth();
   const navigate = useNavigate();
@@ -28,14 +38,14 @@ const Register = () => {
   );
   const loginLink = useMemo(() => appendReturnUrl('/login', returnUrl), [returnUrl]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
     if (password !== confirmPassword) {
       toast({
         title: 'Passwords do not match',
         description: 'Please make sure your passwords match',
-        variant: 'destructive'
+        variant: 'destructive',
       });
       return;
     }
@@ -44,7 +54,7 @@ const Register = () => {
       toast({
         title: 'Password too short',
         description: 'Password must be at least 6 characters',
-        variant: 'destructive'
+        variant: 'destructive',
       });
       return;
     }
@@ -59,8 +69,7 @@ const Register = () => {
     }
 
     setIsLoading(true);
-
-    const result = await register(email, password, name);
+    const result = await register(email, password, name, { staySignedIn });
 
     if (result.success) {
       toast({
@@ -71,14 +80,14 @@ const Register = () => {
     } else {
       toast({
         title: 'Registration Failed',
-        description: result.error || 'Could not create account',
-        variant: 'destructive'
+        description: getUserFriendlyErrorMessage(result.error, 'Could not create account'),
+        variant: 'destructive',
       });
     }
 
     setIsLoading(false);
   };
-  
+
   return (
     <>
       <Helmet>
@@ -114,7 +123,7 @@ const Register = () => {
                     type="text"
                     placeholder="Jane Doe"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(event) => setName(event.target.value)}
                     required
                     maxLength={80}
                     className="h-12 text-base w-full"
@@ -128,7 +137,7 @@ const Register = () => {
                     type="email"
                     placeholder="student@university.edu"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(event) => setEmail(event.target.value)}
                     required
                     className="h-12 text-base w-full"
                   />
@@ -136,28 +145,48 @@ const Register = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="password" className="text-sm md:text-base">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="h-12 text-base w-full"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      className="h-12 text-base w-full pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((previous) => !previous)}
+                      className="absolute inset-y-0 right-2 inline-flex items-center px-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword" className="text-sm md:text-base">Confirm Password</Label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    placeholder="••••••••"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    className="h-12 text-base w-full"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="confirmPassword"
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      required
+                      className="h-12 text-base w-full pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((previous) => !previous)}
+                      className="absolute inset-y-0 right-2 inline-flex items-center px-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
 
                 <Button
@@ -167,6 +196,16 @@ const Register = () => {
                 >
                   {isLoading ? 'Creating account...' : 'Create Account'}
                 </Button>
+
+                <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                  <input
+                    type="checkbox"
+                    checked={staySignedIn}
+                    onChange={(event) => setStaySignedIn(event.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  Stay logged in on this device
+                </label>
 
                 <p className="text-center text-sm md:text-base text-slate-600 dark:text-slate-400">
                   Already have an account?{' '}

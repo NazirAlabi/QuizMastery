@@ -371,94 +371,96 @@ const QuizRunner = ({ quiz, attemptId }) => {
         </Button>
       </div>
 
-      {isOnBreak ? (
-        <div className="rounded-lg border border-slate-300 bg-slate-100 p-8 text-center dark:border-slate-700 dark:bg-slate-900">
-          <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">Break in progress</p>
-          <p className="text-sm text-slate-600 mt-2 dark:text-slate-400">
-            Timer and interactions are paused. Resume when ready.
-          </p>
-          <Button
-            className="mt-4"
-            onClick={() => setIsOnBreak(false)}
-          >
-            <PlayCircle className="h-4 w-4 mr-2" />
-            Resume Quiz
-          </Button>
-        </div>
-      ) : (
-        <QuestionCard
-          question={currentQuestion}
-          selectedAnswer={answers[currentQuestion.id]}
-          onAnswerChange={(value) => handleAnswerChange(currentQuestion, value)}
-        />
-      )}
-
-      <div className="mt-6 flex flex-row items-center justify-between gap-3 md:gap-0">
-        <Button
-          variant="outline"
-          onClick={handlePrevious}
-          disabled={isFirstQuestion || isInteractionLocked}
-          className="w-full md:w-auto min-h-[3rem] md:min-h-[2.5rem] text-slate-700 text-base dark:text-slate-300"
-        >
-          <ChevronLeft className="h-5 w-5 md:h-4 md:w-4 mr-2" />
-          Previous
-        </Button>
-
-        {isLastQuestion ? (
-          <Button
-            onClick={() => handleSubmitQuiz()}
-            disabled={isInteractionLocked}
-            className="w-full md:w-auto min-h-[3rem] md:min-h-[2.5rem] bg-green-600 hover:bg-green-700 text-white text-base dark:bg-green-600 dark:hover:bg-green-700"
-          >
-            <CheckCircle className="h-5 w-5 md:h-4 md:w-4 mr-2" />
-            {isSubmitting ? 'Submitting...' : 'Submit Quiz'}
-          </Button>
-        ) : (
-          <Button
-            onClick={handleNext}
-            disabled={isInteractionLocked}
-            className="w-full md:w-auto min-h-[3rem] md:min-h-[2.5rem] bg-indigo-600 hover:bg-indigo-700 text-white text-base dark:bg-indigo-500 dark:hover:bg-indigo-600"
-          >
-            Next
-            <ChevronRight className="h-5 w-5 md:h-4 md:w-4 ml-2" />
-          </Button>
-        )}        
-      </div>
-      <div className="mt-4 rounded-lg border border-slate-300 bg-slate-100 p-3 dark:border-slate-700 dark:bg-slate-900">
-        <p className="text-xs font-medium text-slate-600 mb-2 dark:text-slate-400">Question Navigator</p>
-        <div className="flex flex-wrap gap-2">
-          {quiz.questions.map((question, index) => {
-            const isCurrent = index === currentQuestionIndex;
-            const isAnswered = hasAnswerValue(answers[question.id]);
-            const isMarked = Boolean(markedForReview[question.id]);
-            return (
-              <button
-                key={question.id}
-                type="button"
-                onClick={() => navigateToQuestion(index)}
-                disabled={isInteractionLocked}
-                className={cn(
-                  'h-9 w-9 rounded-md border text-xs font-semibold transition-colors',
-                  'disabled:cursor-not-allowed disabled:opacity-60 border-2',
-                  isCurrent && 'border-indigo-600 bg-indigo-600 text-white',
-                  isCurrent && isAnswered && !isMarked && 'border-green-500 bg-indigo-600 text-white',
-                  isCurrent && isMarked && !isAnswered && 'border-amber-500 bg-indigo-600 text-white',
-                  isCurrent && isAnswered && isMarked && 'border-y-amber-500 border-x-green-500 bg-indigo-600 text-white',
-                  !isCurrent && isMarked && 'border-amber-500 bg-amber-100 text-amber-900 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-300',
-                  !isCurrent && isMarked && isAnswered && 'border-amber-500 bg-green-100 dark:border-amber-500 dark:bg-green-950/40 dark:text-green-300',
-                  !isCurrent && !isMarked && isAnswered && 'border-green-500 bg-green-100 text-green-900 dark:border-green-500 dark:bg-green-950/40 dark:text-green-300',
-                  !isCurrent && !isMarked && !isAnswered && 'border-slate-300 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300'
-                )}
-                title={`Question ${index + 1}`}
+      <div className="md:grid md:grid-cols-[minmax(0,1fr)_15rem] md:items-start md:gap-4">
+        <div>
+          {isOnBreak ? (
+            <div className="rounded-lg border border-slate-300 bg-slate-100 p-8 text-center dark:border-slate-700 dark:bg-slate-900">
+              <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">Break in progress</p>
+              <p className="text-sm text-slate-600 mt-2 dark:text-slate-400">
+                Timer and interactions are paused. Resume when ready.
+              </p>
+              <Button
+                className="mt-4"
+                onClick={() => setIsOnBreak(false)}
               >
-                {index + 1}
-              </button>
-            );
-          })}
+                <PlayCircle className="h-4 w-4 mr-2" />
+                Resume Quiz
+              </Button>
+            </div>
+          ) : (
+            <QuestionCard
+              question={currentQuestion}
+              selectedAnswer={answers[currentQuestion.id]}
+              onAnswerChange={(value) => handleAnswerChange(currentQuestion, value)}
+            />
+          )}
+
+          <div className="mt-6 flex flex-row items-center justify-between gap-3 md:gap-0">
+            <Button
+              variant="outline"
+              onClick={handlePrevious}
+              disabled={isFirstQuestion || isInteractionLocked}
+              className="w-full md:w-auto min-h-[3rem] md:min-h-[2.5rem] text-slate-700 text-base dark:text-slate-300"
+            >
+              <ChevronLeft className="h-5 w-5 md:h-4 md:w-4 mr-2" />
+              Previous
+            </Button>
+
+            {isLastQuestion ? (
+              <Button
+                onClick={() => handleSubmitQuiz()}
+                disabled={isInteractionLocked}
+                className="w-full md:w-auto min-h-[3rem] md:min-h-[2.5rem] bg-green-600 hover:bg-green-700 text-white text-base dark:bg-green-600 dark:hover:bg-green-700"
+              >
+                <CheckCircle className="h-5 w-5 md:h-4 md:w-4 mr-2" />
+                {isSubmitting ? 'Submitting...' : 'Submit Quiz'}
+              </Button>
+            ) : (
+              <Button
+                onClick={handleNext}
+                disabled={isInteractionLocked}
+                className="w-full md:w-auto min-h-[3rem] md:min-h-[2.5rem] bg-indigo-600 hover:bg-indigo-700 text-white text-base dark:bg-indigo-500 dark:hover:bg-indigo-600"
+              >
+                Next
+                <ChevronRight className="h-5 w-5 md:h-4 md:w-4 ml-2" />
+              </Button>
+            )}
+          </div>
         </div>
-        {/* <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-          Green = answered | Amber = marked for review
-        </p> */}
+
+        <div className="mt-4 rounded-lg border border-slate-300 bg-slate-100 p-3 dark:border-slate-700 dark:bg-slate-900 md:mt-0">
+          <p className="text-xs font-medium text-slate-600 mb-2 dark:text-slate-400">Question Navigator</p>
+          <div className="flex flex-wrap gap-2">
+            {quiz.questions.map((question, index) => {
+              const isCurrent = index === currentQuestionIndex;
+              const isAnswered = hasAnswerValue(answers[question.id]);
+              const isMarked = Boolean(markedForReview[question.id]);
+              return (
+                <button
+                  key={question.id}
+                  type="button"
+                  onClick={() => navigateToQuestion(index)}
+                  disabled={isInteractionLocked}
+                  className={cn(
+                    'h-9 w-9 rounded-md border text-xs font-semibold transition-colors',
+                    'disabled:cursor-not-allowed disabled:opacity-60 border-2',
+                    isCurrent && 'border-indigo-600 bg-indigo-600 text-white',
+                    isCurrent && isAnswered && !isMarked && 'border-green-500 bg-indigo-600 text-white',
+                    isCurrent && isMarked && !isAnswered && 'border-amber-500 bg-indigo-600 text-white',
+                    isCurrent && isAnswered && isMarked && 'border-y-amber-500 border-x-green-500 bg-indigo-600 text-white',
+                    !isCurrent && isMarked && 'border-amber-500 bg-amber-100 text-amber-900 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-300',
+                    !isCurrent && isMarked && isAnswered && 'border-amber-500 bg-green-100 dark:border-amber-500 dark:bg-green-950/40 dark:text-green-300',
+                    !isCurrent && !isMarked && isAnswered && 'border-green-500 bg-green-100 text-green-900 dark:border-green-500 dark:bg-green-950/40 dark:text-green-300',
+                    !isCurrent && !isMarked && !isAnswered && 'border-slate-300 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300'
+                  )}
+                  title={`Question ${index + 1}`}
+                >
+                  {index + 1}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
         <Button
           variant="destructive"

@@ -1,0 +1,24 @@
+{
+  "reason": "String | null", // Optional predefined reason selected in UI
+  "urgency": "low | medium | high | null", // Optional urgency level
+  "category": "technical | content | account | request | other | null", // Optional category
+  "subject": "String | null", // Optional short summary
+  "details": "String | null", // Optional long-form details
+  "contextKey": "global | courses_page | quiz_attempt | question_card | quiz_detail | course_detail",
+  "contextLabel": "String | null", // Human label for the context
+  "subjectType": "quiz | question | course | page | null",
+  "subjectId": "String | null",
+  "sourcePath": "/courses", // Path where feedback was submitted
+  "sourceSearch": "?foo=bar", // Optional query string
+  "status": "new | triaged | in_progress | resolved | dismissed",
+  "triageNotes": "String | null", // Dev dashboard notes
+  "tags": ["bug", "content"],
+  "createdAt": "FieldValue.serverTimestamp()",
+  "updatedAt": "FieldValue.serverTimestamp()",
+  "user": {
+    "uid": "String | null",
+    "email": "String | null",
+    "displayName": "String | null",
+    "isGuest": true
+  }
+}

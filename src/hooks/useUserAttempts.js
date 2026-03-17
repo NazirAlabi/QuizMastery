@@ -2,21 +2,26 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getUserAttempts, deleteAttempt, cleanupStaleAttempts } from '@/api/api.js';
 import { queryKeys } from '@/hooks/queryKeys.js';
 import { measureAsync } from '@/utils/performance.js';
+import { logFirestoreQueryError } from '@/utils/firestoreDiagnostics.js';
 
 export const useUserAttempts = () => {
   return useQuery({
     queryKey: queryKeys.userAttempts,
     queryFn: async () => {
-      // First, delete any in‑progress attempts to prevent bugs
+      // First, delete stale in-progress attempts to prevent edge-case states.
       try {
         await measureAsync('query:cleanup-stale-attempts', () => cleanupStaleAttempts());
       } catch (error) {
-        // Log the error but continue – the user can still see their other attempts
-        console.error('Failed to clean up stale attempts:', error);
+        // Continue even if cleanup fails so the main attempts list can still load.
+        logFirestoreQueryError('useUserAttempts:cleanupStaleAttempts', error);
       }
 
-      // Then fetch the remaining attempts (abandoned or completed)
-      return measureAsync('query:user-attempts', () => getUserAttempts());
+      try {
+        return await measureAsync('query:user-attempts', () => getUserAttempts());
+      } catch (error) {
+        logFirestoreQueryError('useUserAttempts:getUserAttempts', error);
+        throw error;
+      }
     },
   });
 };
@@ -44,4 +49,3 @@ export const useCleanupStaleAttempts = () => {
     },
   });
 };
-

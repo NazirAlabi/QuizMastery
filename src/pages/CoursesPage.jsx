@@ -4,10 +4,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
+import FeedbackButton from '@/components/feedback/FeedbackButton.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
 import { getCoursePageById } from '@/api/api.js';
 import { useCourses } from '@/hooks/useCourses.js';
@@ -18,7 +20,7 @@ import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
 import { appendReturnUrl } from '@/utils/returnUrl.js';
 import { ChevronDown, LayoutGrid, List } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
-import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
+import { getUserFriendlyErrorMessage, isConnectionRelatedError } from '@/utils/errorHandling.js';
 
 const CoursesPage = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -53,7 +55,7 @@ const CoursesPage = () => {
   const { toast } = useToast();
   const { user, isDevFeaturesEnabled } = useAuth();
   const queryClient = useQueryClient();
-  const { data: courses = [], isLoading, isError } = useCourses();
+  const { data: courses = [], isLoading, isError, error, refetch } = useCourses();
   const startAttemptMutation = useStartAttempt();
   const location = useLocation();
   const returnUrl = useMemo(
@@ -177,6 +179,7 @@ const CoursesPage = () => {
     (quiz) => (isDevFeaturesEnabled ? `Start Quiz (${quiz.id})` : 'Start Quiz'),
     [isDevFeaturesEnabled]
   );
+  const shouldShowDataOverlay = !isLoading && isError && groupedCourses.length === 0;
 
   const clearFilters = useCallback(() => {
     setSelectedCourseFilters([]);
@@ -223,12 +226,23 @@ const CoursesPage = () => {
 
         <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-12">
           <div className="mb-6 md:mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2 dark:text-white">
-              Available Courses
-            </h1>
-            <p className="text-base md:text-lg text-slate-600 dark:text-slate-400">
-              Browse courses and launch quizzes by subject area.
-            </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2 dark:text-white">
+                  Available Courses
+                </h1>
+                <p className="text-base md:text-lg text-slate-600 dark:text-slate-400">
+                  Browse courses and launch quizzes by subject area.
+                </p>
+              </div>
+              <FeedbackButton
+                contextKey="courses_page"
+                contextLabel="Courses Page"
+                subjectType="page"
+                subjectId="courses"
+                label="Feedback"
+              />
+            </div>
           </div>
 
           {windowWidth < 768 && (
@@ -256,147 +270,156 @@ const CoursesPage = () => {
             </div>
           )}
 
-          {courses.length > 0 && (
-            <Card className="mb-6">
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Filter courses
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    type="button"
-                    onClick={() => setIsMobileFiltersOpen((previous) => !previous)}
-                    className="md:hidden h-8"
-                    aria-expanded={isMobileFiltersOpen}
-                  >
-                    {isMobileFiltersOpen ? 'Hide' : 'Show'}
-                    <ChevronDown
-                      className={cn(
-                        'ml-2 h-4 w-4 transition-transform',
-                        isMobileFiltersOpen && 'rotate-180'
-                      )}
-                    />
-                  </Button>
-                </div>
-                <div className={cn('mt-3', isMobileFiltersOpen ? 'block' : 'hidden', 'md:block')}>
-                  <div className="flex flex-wrap items-center gap-2 md:flex-nowrap md:overflow-x-auto md:pb-1">
-                    {courses.map((course) => {
-                      const isSelected = selectedCourseFilters.includes(course.id);
-                      return (
-                        <Button
-                          key={course.id}
-                          size="sm"
-                          variant={isSelected ? 'default' : 'outline'}
-                          onClick={() => toggleCourseFilter(course.id)}
-                          className="h-8 md:flex-shrink-0"
-                        >
-                          {course.title} ({course.quizzes.length})
-                        </Button>
-                      );
-                    })}
+          <DataStatusOverlay
+            isVisible={shouldShowDataOverlay}
+            title={isConnectionRelatedError(error) ? 'Connection issue' : 'Unable to load courses'}
+            description={isConnectionRelatedError(error)
+              ? 'No course objects were loaded due to a bad connection. Retry once you are online.'
+              : 'No course objects were returned. Try refreshing.'}
+            onRetry={() => refetch()}
+          >
+            {courses.length > 0 && (
+              <Card className="mb-6">
+                <CardContent className="py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Filter courses
+                    </span>
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={clearFilters}
-                      disabled={selectedCourseFilters.length === 0}
-                      className="h-8 md:flex-shrink-0"
+                      type="button"
+                      onClick={() => setIsMobileFiltersOpen((previous) => !previous)}
+                      className="md:hidden h-8"
+                      aria-expanded={isMobileFiltersOpen}
                     >
-                      Clear all filters
+                      {isMobileFiltersOpen ? 'Hide' : 'Show'}
+                      <ChevronDown
+                        className={cn(
+                          'ml-2 h-4 w-4 transition-transform',
+                          isMobileFiltersOpen && 'rotate-180'
+                        )}
+                      />
                     </Button>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <div className="space-y-8">
-            {groupedCourses.map((course) => (
-              <section key={course.id} className="space-y-4 group/course">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-                      <Link
-                        to={`/courses/${course.id}`}
-                        className="hover:text-indigo-700 dark:hover:text-indigo-300"
-                        onMouseEnter={() => prefetchCourse(course.id)}
-                        onFocus={() => prefetchCourse(course.id)}
-                      >
-                        {course.title}
-                      </Link>
-                    </h2>
-                    {course.courseCode ? <Badge variant="outline">{course.courseCode}</Badge> : null}
-                  </div>
-                  <button onClick={() => toggleCourseDescription(course.id)} className='text-start'>
-                    <p className={`text-slate-600 dark:text-slate-400 md:w-[700px] ${expandedCourseIds.has(course.id) ? '' : 'line-clamp-2 md:line-clamp-4'}`}>
-                      {course.shortDescription || course.description || ''}
-                    </p>
-                  </button>
-                </div>
-
-                {course.groupedQuizzes.length === 0 ? (
-                  <Card className="max-w-md">
-                    <CardHeader>
-                      <CardTitle className="text-lg">No quizzes linked yet</CardTitle>
-                      <CardDescription>
-                        This course currently has no active quizzes.
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                ) : (
-                  <>
-                    <div
-                      className={cn(
-                        'grid gap-4 md:gap-6',
-                        viewMode === 'grid-2'
-                          ? 'grid-cols-2'
-                          : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
-                      )}
-                    >
-                      {course.groupedQuizzes.slice(0, quizLimit).map((quiz, index) => (
-                        <QuizCard
-                          key={quiz.id}
-                          quiz={quiz}
-                          variations={quiz.allVariations}
-                          onStart={handleStartQuiz}
-                          isStarting={startingQuizId === quiz.id}
-                          isDevFeaturesEnabled={isDevFeaturesEnabled}
-                          startLabel={getStartLabel(quiz)}
-                          fullWidthButton={isDevFeaturesEnabled}
-                          defaultExpanded={index === 0}
-                          isGrid={viewMode === 'grid-2'}
-                        />
-                      ))}
-                    </div>
-                    {course.groupedQuizzes.length > quizLimit && (
-                      <div className="flex justify-center mt-4">
-                        <Button variant="outline" asChild>
-                          <Link
-                            to={`/courses/${course.id}`}
-                            onMouseEnter={() => prefetchCourse(course.id)}
-                            onFocus={() => prefetchCourse(course.id)}
+                  <div className={cn('mt-3', isMobileFiltersOpen ? 'block' : 'hidden', 'md:block')}>
+                    <div className="flex flex-wrap items-center gap-2 md:flex-nowrap md:overflow-x-auto md:pb-1">
+                      {courses.map((course) => {
+                        const isSelected = selectedCourseFilters.includes(course.id);
+                        return (
+                          <Button
+                            key={course.id}
+                            size="sm"
+                            variant={isSelected ? 'default' : 'outline'}
+                            onClick={() => toggleCourseFilter(course.id)}
+                            className="h-8 md:flex-shrink-0"
                           >
-                            View all {course.groupedQuizzes.length} unique quizzes in {course.title}
-                          </Link>
-                        </Button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </section>
-            ))}
-            {visibleCourses.length === 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">No matching courses</CardTitle>
-                  <CardDescription>
-                    Your current filters did not match any course. Clear filters to see all courses.
-                  </CardDescription>
-                </CardHeader>
+                            {course.title} ({course.quizzes.length})
+                          </Button>
+                        );
+                      })}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={clearFilters}
+                        disabled={selectedCourseFilters.length === 0}
+                        className="h-8 md:flex-shrink-0"
+                      >
+                        Clear all filters
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
               </Card>
             )}
-          </div>
+
+            <div className="space-y-8">
+              {groupedCourses.map((course) => (
+                <section key={course.id} className="space-y-4 group/course">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+                        <Link
+                          to={`/courses/${course.id}`}
+                          className="hover:text-indigo-700 dark:hover:text-indigo-300"
+                          onMouseEnter={() => prefetchCourse(course.id)}
+                          onFocus={() => prefetchCourse(course.id)}
+                        >
+                          {course.title}
+                        </Link>
+                      </h2>
+                      {course.courseCode ? <Badge variant="outline">{course.courseCode}</Badge> : null}
+                    </div>
+                    <button onClick={() => toggleCourseDescription(course.id)} className="text-start">
+                      <p className={`text-slate-600 dark:text-slate-400 md:w-[700px] ${expandedCourseIds.has(course.id) ? '' : 'line-clamp-2 md:line-clamp-4'}`}>
+                        {course.shortDescription || course.description || ''}
+                      </p>
+                    </button>
+                  </div>
+
+                  {course.groupedQuizzes.length === 0 ? (
+                    <Card className="max-w-md">
+                      <CardHeader>
+                        <CardTitle className="text-lg">No quizzes linked yet</CardTitle>
+                        <CardDescription>
+                          This course currently has no active quizzes.
+                        </CardDescription>
+                      </CardHeader>
+                    </Card>
+                  ) : (
+                    <>
+                      <div
+                        className={cn(
+                          'grid gap-4 md:gap-6',
+                          viewMode === 'grid-2'
+                            ? 'grid-cols-2'
+                            : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                        )}
+                      >
+                        {course.groupedQuizzes.slice(0, quizLimit).map((quiz, index) => (
+                          <QuizCard
+                            key={quiz.id}
+                            quiz={quiz}
+                            variations={quiz.allVariations}
+                            onStart={handleStartQuiz}
+                            isStarting={startingQuizId === quiz.id}
+                            isDevFeaturesEnabled={isDevFeaturesEnabled}
+                            startLabel={getStartLabel(quiz)}
+                            fullWidthButton={isDevFeaturesEnabled}
+                            defaultExpanded={index === 0}
+                            isGrid={viewMode === 'grid-2'}
+                          />
+                        ))}
+                      </div>
+                      {course.groupedQuizzes.length > quizLimit && (
+                        <div className="flex justify-center mt-4">
+                          <Button variant="outline" asChild>
+                            <Link
+                              to={`/courses/${course.id}`}
+                              onMouseEnter={() => prefetchCourse(course.id)}
+                              onFocus={() => prefetchCourse(course.id)}
+                            >
+                              View all {course.groupedQuizzes.length} unique quizzes in {course.title}
+                            </Link>
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </section>
+              ))}
+              {visibleCourses.length === 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">No matching courses</CardTitle>
+                    <CardDescription>
+                      Your current filters did not match any course. Clear filters to see all courses.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              )}
+            </div>
+          </DataStatusOverlay>
         </div>
       </div>
     </>

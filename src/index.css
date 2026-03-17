@@ -90,3 +90,59 @@ html.dark[data-wallpaper='prism'] body {
   background-size: cover;
   background-attachment: fixed;
 }
+
+@keyframes hero-float-a {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-18px, 12px, 0) scale(1.08); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes hero-float-b {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(16px, -10px, 0) scale(0.94); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes hero-twinkle {
+  0% { opacity: 0.2; transform: scale(0.9); }
+  35% { opacity: 0.8; transform: scale(1.15); }
+  70% { opacity: 0.35; transform: scale(1); }
+  100% { opacity: 0.2; transform: scale(0.9); }
+}
+
+.motion-hero-float-a {
+  animation: hero-float-a 8s ease-in-out infinite;
+}
+
+.motion-hero-float-b {
+  animation: hero-float-b 9s ease-in-out infinite;
+}
+
+.motion-hero-twinkle {
+  animation: hero-twinkle 3.8s ease-in-out infinite;
+}
+
+.motion-hero-twinkle-delay {
+  animation: hero-twinkle 4.6s ease-in-out infinite;
+  animation-delay: 1.3s;
+}
+
+html[data-ui-scale='compact'] {
+  font-size: 15px;
+}
+
+html[data-ui-scale='default'] {
+  font-size: 16px;
+}
+
+html[data-ui-scale='comfortable'] {
+  font-size: 17px;
+}
+
+@media (max-width: 767px) {
+  html[data-ui-scale='comfortable'] input,
+  html[data-ui-scale='comfortable'] textarea,
+  html[data-ui-scale='comfortable'] select {
+    font-size: 16px;
+  }
+}

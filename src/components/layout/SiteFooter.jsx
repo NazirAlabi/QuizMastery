@@ -38,6 +38,7 @@ const SiteFooter = () => {
   const { isDevFeaturesEnabled } = useAuth();
   const [content, setContent] = useState(() => readFooterContent());
   const [draft, setDraft] = useState(() => readFooterContent());
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
 
   const hasDraftChanges = useMemo(
     () =>
@@ -78,36 +79,48 @@ const SiteFooter = () => {
           <p className="text-xs text-slate-500 dark:text-slate-500">{content.note}</p>
         </div>
 
-        {isDevFeaturesEnabled && (
-          <div className="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3 dark:border-amber-800 dark:bg-amber-950/30">
-            <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Footer Customization (Dev Mode)</p>
-            <Input
-              value={draft.title}
-              onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
-              placeholder="Footer title"
-            />
-            <Input
-              value={draft.subtitle}
-              onChange={(e) => setDraft((prev) => ({ ...prev, subtitle: e.target.value }))}
-              placeholder="Footer subtitle"
-            />
-            <textarea
-              value={draft.note}
-              onChange={(e) => setDraft((prev) => ({ ...prev, note: e.target.value }))}
-              placeholder="Footer note"
-              rows={3}
-              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={applyDraft} disabled={!hasDraftChanges}>
-                Save Footer
-              </Button>
-              <Button variant="outline" onClick={resetContent}>
-                Reset Default
-              </Button>
-            </div>
+        {isDevFeaturesEnabled ? (
+          <div className="mt-6">
+            <Button
+              size="sm"
+              variant={isEditorOpen ? 'default' : 'outline'}
+              onClick={() => setIsEditorOpen((previous) => !previous)}
+            >
+              {isEditorOpen ? 'Hide Footer Customization' : 'Customize Footer (Dev)'}
+            </Button>
+
+            {isEditorOpen ? (
+              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3 dark:border-amber-800 dark:bg-amber-950/30">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Footer Customization (Dev Mode)</p>
+                <Input
+                  value={draft.title}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Footer title"
+                />
+                <Input
+                  value={draft.subtitle}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, subtitle: e.target.value }))}
+                  placeholder="Footer subtitle"
+                />
+                <textarea
+                  value={draft.note}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, note: e.target.value }))}
+                  placeholder="Footer note"
+                  rows={3}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={applyDraft} disabled={!hasDraftChanges}>
+                    Save Footer
+                  </Button>
+                  <Button variant="outline" onClick={resetContent}>
+                    Reset Default
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </div>
     </footer>
   );

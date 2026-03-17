@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
@@ -14,7 +15,7 @@ import { useQuizzes } from '@/hooks/useQuizzes.js';
 import { useStartAttempt } from '@/hooks/useStartAttempt.js';
 import { GUEST_ATTEMPT_LIMIT_REACHED_CODE } from '@/api/api.js';
 import { appendReturnUrl } from '@/utils/returnUrl.js';
-import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
+import { getUserFriendlyErrorMessage, isConnectionRelatedError } from '@/utils/errorHandling.js';
 
 const QuizList = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -24,7 +25,7 @@ const QuizList = () => {
   const { user, isDevFeaturesEnabled } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { data: quizzes = [], isLoading, isError } = useQuizzes();
+  const { data: quizzes = [], isLoading, isError, error, refetch } = useQuizzes();
   const startAttemptMutation = useStartAttempt();
   const location = useLocation();
   const returnUrl = useMemo(
@@ -72,6 +73,8 @@ const QuizList = () => {
       variant: 'destructive',
     });
   }, [hasShownLoadError, isError, toast]);
+
+  const shouldShowDataOverlay = !isLoading && isError && filteredQuizzes.length === 0;
 
   const handleStartQuiz = useCallback(
     async (quiz) => {
@@ -183,42 +186,51 @@ const QuizList = () => {
             </div>
           </div>
 
-          {isDevFeaturesEnabled && (
-            <Card className="mb-6 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-amber-900 dark:text-amber-200">
-                  Developer Features
-                </CardTitle>
-                <CardDescription className="text-amber-800 dark:text-amber-300">
-                  Quiz metadata is visible and start buttons include raw IDs for debugging.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          )}
+          <DataStatusOverlay
+            isVisible={shouldShowDataOverlay}
+            title={isConnectionRelatedError(error) ? 'Connection issue' : 'Unable to load quizzes'}
+            description={isConnectionRelatedError(error)
+              ? 'No quiz data loaded due to a bad connection. Please check your network and retry.'
+              : 'No quiz data was returned. Try reloading.'}
+            onRetry={() => refetch()}
+          >
+            {isDevFeaturesEnabled && (
+              <Card className="mb-6 border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-amber-900 dark:text-amber-200">
+                    Developer Features
+                  </CardTitle>
+                  <CardDescription className="text-amber-800 dark:text-amber-300">
+                    Quiz metadata is visible and start buttons include raw IDs for debugging.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
 
-          <div className="flex flex-wrap gap-4 md:gap-6">
-            {filteredQuizzes.map((quiz, index) => (
-              <QuizCard
-                key={quiz.id}
-                quiz={quiz}
-                onStart={handleStartQuiz}
-                isStarting={startingQuizId === quiz.id}
-                isDevFeaturesEnabled={isDevFeaturesEnabled}
-                startLabel={startButtonLabel(quiz)}
-                fullWidthButton={isDevFeaturesEnabled}
-                className="w-md md:max-w-md"
-                defaultExpanded={index === 0}
-              />
-            ))}
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+              {filteredQuizzes.map((quiz, index) => (
+                <QuizCard
+                  key={quiz.id}
+                  quiz={quiz}
+                  onStart={handleStartQuiz}
+                  isStarting={startingQuizId === quiz.id}
+                  isDevFeaturesEnabled={isDevFeaturesEnabled}
+                  startLabel={startButtonLabel(quiz)}
+                  fullWidthButton={isDevFeaturesEnabled}
+                  className="w-md md:max-w-md h-max"
+                  defaultExpanded={index === 0}
+                />
+              ))}
+            </div>
 
-          {filteredQuizzes.length === 0 ? (
-            <Card className="mt-6">
-              <CardContent className="py-8 text-center text-slate-600 dark:text-slate-400">
-                No quizzes match your search.
-              </CardContent>
-            </Card>
-          ) : null}
+            {filteredQuizzes.length === 0 ? (
+              <Card className="mt-6">
+                <CardContent className="py-8 text-center text-slate-600 dark:text-slate-400">
+                  No quizzes match your search.
+                </CardContent>
+              </Card>
+            ) : null}
+          </DataStatusOverlay>
         </div>
       </div>
     </>

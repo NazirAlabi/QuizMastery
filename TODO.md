@@ -1,4 +1,6 @@
 **Now**
+Fix login screen
+
 remove the wallpaper alternatetor button from mobile altogether for now
 On md screens move the question navigator to the right side of the question card.
 **Soon**

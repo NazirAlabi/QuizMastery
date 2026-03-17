@@ -1,7 +1,11 @@
 import {
+  browserLocalPersistence,
+  browserSessionPersistence,
   EmailAuthProvider,
   createUserWithEmailAndPassword,
   linkWithCredential,
+  sendPasswordResetEmail,
+  setPersistence,
   signInAnonymously,
   signInWithEmailAndPassword,
   signOut,
@@ -28,11 +32,16 @@ import { questionRepository } from '@/repositories/questionRepository.js';
 import { attemptRepository } from '@/repositories/attemptRepository.js';
 import { courseRepository } from '@/repositories/courseRepository.js';
 import { evaluateAnswer, isQuestionAutoGraded } from '@/utils/evaluateAnswer.js';
+import {
+  isUnexpectedFirestoreResponse,
+  logUnexpectedFirestoreResponse,
+} from '@/utils/firestoreDiagnostics.js';
 const GUEST_ATTEMPT_LIMIT = 2;
 
 const discussionsCollection = collection(db, 'questionDiscussions');
 const usersCollection = collection(db, 'users');
 const attemptsCollection = collection(db, 'userAttempts');
+const feedbackCollection = collection(db, 'feedbackEntries');
 
 const SCORE_LEVELS = {
   EXCELLENT: 90,
@@ -188,6 +197,12 @@ const mapQuizForList = (quiz, courseByQuizId) => {
 };
 
 const normalizeDisplayName = (value) => String(value || '').trim();
+const normalizeDisplayNameForMatch = (value) => normalizeDisplayName(value).toLowerCase();
+
+const resolveAuthPersistence = (persistenceMode) =>
+  String(persistenceMode || '').toLowerCase() === 'session'
+    ? browserSessionPersistence
+    : browserLocalPersistence;
 
 const normalizeEmailValue = (value) => {
   if (value === null) return null;
@@ -337,7 +352,8 @@ export const resolveSessionUser = async (
   return ensureUserProfile(firebaseUser, '', { email });
 };
 
-export const login = async (email, password) => {
+export const login = async (email, password, { persistence = 'local' } = {}) => {
+  await setPersistence(auth, resolveAuthPersistence(persistence));
   const credential = await signInWithEmailAndPassword(auth, email, password);
   const user = await ensureUserProfile(credential.user, '', { email });
   const token = await credential.user.getIdToken();
@@ -348,11 +364,13 @@ export const login = async (email, password) => {
   };
 };
 
-export const register = async (email, password, displayName = '') => {
+export const register = async (email, password, displayName = '', { persistence = 'local' } = {}) => {
   const normalizedName = normalizeDisplayName(displayName);
   if (!normalizedName) {
     throw new Error('Display name is required');
   }
+
+  await setPersistence(auth, resolveAuthPersistence(persistence));
 
   let credential;
   const currentUser = auth.currentUser;
@@ -369,6 +387,28 @@ export const register = async (email, password, displayName = '') => {
     user,
     token,
   };
+};
+
+export const requestPasswordReset = async ({ email, displayName }) => {
+  const normalizedEmail = normalizeEmailValue(email);
+  const normalizedName = normalizeDisplayName(displayName);
+
+  if (!normalizedEmail || !normalizedName) {
+    throw new Error('Email and display name are required.');
+  }
+
+  const userMatches = await getDocs(query(usersCollection, where('email', '==', normalizedEmail)));
+  const hasMatchingDisplayName = userMatches.docs.some((snapshot) => {
+    const userData = snapshot.data() || {};
+    return normalizeDisplayNameForMatch(userData.displayName) === normalizeDisplayNameForMatch(normalizedName);
+  });
+
+  if (!hasMatchingDisplayName) {
+    throw new Error('Display name and email do not match our records.');
+  }
+
+  await sendPasswordResetEmail(auth, normalizedEmail);
+  return { email: normalizedEmail, sent: true };
 };
 
 export const createGuest = async (displayName = '') => {
@@ -411,6 +451,10 @@ export const updateUserDisplayName = async (displayName) => {
 
 export const getQuizzes = async () => {
   const quizzes = await quizRepository.getQuizzes();
+  if (isUnexpectedFirestoreResponse(quizzes, 'array')) {
+    logUnexpectedFirestoreResponse('getQuizzes', 'array', quizzes);
+    return [];
+  }
   const courseByQuizId = new Map();
 
   const activeQuizzes = quizzes.filter((quiz) => quiz?.isArchived !== true);
@@ -422,6 +466,15 @@ export const getCoursesWithQuizzes = async () => {
     courseRepository.getCourses(),
     quizRepository.getQuizzes(),
   ]);
+
+  if (isUnexpectedFirestoreResponse(courses, 'array')) {
+    logUnexpectedFirestoreResponse('getCoursesWithQuizzes:courses', 'array', courses);
+    return [];
+  }
+  if (isUnexpectedFirestoreResponse(quizzes, 'array')) {
+    logUnexpectedFirestoreResponse('getCoursesWithQuizzes:quizzes', 'array', quizzes);
+    return [];
+  }
 
   const activeQuizzes = quizzes.filter((quiz) => quiz?.isArchived !== true);
   const quizById = new Map(activeQuizzes.map((quiz) => [quiz.id, quiz]));
@@ -1089,6 +1142,105 @@ export const removeDuplicateAdminContent = async ({ onProgress } = {}) => {
   return summary;
 };
 
+export const hardDeleteCourse = async (courseId) => {
+  return courseRepository.deleteCourse(courseId);
+};
+
+export const hardDeleteQuiz = async (quizId) => {
+  // 1. Detach from all associated courses
+  const associatedCourses = await courseRepository.getCoursesByQuizId(quizId);
+  for (const course of associatedCourses) {
+    const updatedQuizIds = (course.quizIds || []).filter((id) => id !== quizId);
+    await courseRepository.updateCourse(course.id, {
+      ...course,
+      quizIds: updatedQuizIds,
+    });
+  }
+
+  // 2. Delete all related attempts (cascading cleanup)
+  const attemptsSnapshot = await getDocs(query(attemptsCollection, where('quizId', '==', quizId)));
+  for (const attemptDoc of attemptsSnapshot.docs) {
+    await deleteAttemptWithAnswers(attemptDoc.id);
+  }
+
+  // 3. Delete the quiz record
+  return quizRepository.deleteQuiz(quizId);
+};
+
+export const hardDeleteQuestion = async (questionId) => {
+  // 1. Find and update all quizzes containing this question
+  const quizzesSnapshot = await getDocs(
+    query(collection(db, 'quizzes'), where('questionIds', 'array-contains', questionId))
+  );
+
+  for (const quizDoc of quizzesSnapshot.docs) {
+    const quizData = quizDoc.data();
+    const updatedQuestionIds = (quizData.questionIds || []).filter((id) => id !== questionId);
+
+    // Update quiz (recomputes questionCount inside repository)
+    await quizRepository.updateQuiz(quizDoc.id, {
+      ...quizData,
+      questionIds: updatedQuestionIds,
+    });
+
+    // 2. Cascade cleanup: Delete ALL attempts for quizzes that contained this question
+    const attemptsSnapshot = await getDocs(query(attemptsCollection, where('quizId', '==', quizDoc.id)));
+    for (const attemptDoc of attemptsSnapshot.docs) {
+      await deleteAttemptWithAnswers(attemptDoc.id);
+    }
+  }
+
+  // 3. Delete all related discussions
+  const discussionQuery = query(discussionsCollection, where('question_id', '==', questionId));
+  const discussionSnapshot = await getDocs(discussionQuery);
+  for (const discussionDoc of discussionSnapshot.docs) {
+    await deleteDoc(discussionDoc.ref);
+  }
+
+  // 4. Delete the question record
+  return questionRepository.deleteQuestion(questionId);
+};
+
+export const getDeleteImpact = async (type, id) => {
+  if (type === 'course') {
+    return {
+      summary: 'Permanently deletes this course document. Linked quizzes will exist independently.',
+    };
+  }
+
+  if (type === 'quiz') {
+    const associatedCourses = await courseRepository.getCoursesByQuizId(id);
+    const attemptsSnapshot = await getDocs(query(attemptsCollection, where('quizId', '==', id)));
+    return {
+      summary: `Removes from ${associatedCourses.length} courses, deletes ${attemptsSnapshot.size} attempts, and deletes the quiz document.`,
+    };
+  }
+
+  if (type === 'question') {
+    const quizzesSnapshot = await getDocs(
+      query(collection(db, 'quizzes'), where('questionIds', 'array-contains', id))
+    );
+    const quizIds = quizzesSnapshot.docs.map((doc) => doc.id);
+    let totalAttemptsToDelete = 0;
+
+    // Direct loop for clarity in dev mode; avoid 'in' query chunk complexity for impact summary
+    for (const quizId of quizIds) {
+      const attemptsSnapshot = await getDocs(query(attemptsCollection, where('quizId', '==', quizId)));
+      totalAttemptsToDelete += attemptsSnapshot.size;
+    }
+
+    const discussionSnapshot = await getDocs(
+      query(discussionsCollection, where('question_id', '==', id))
+    );
+
+    return {
+      summary: `Removes from ${quizzesSnapshot.size} quizzes, deletes ${discussionSnapshot.size} discussions, deletes ${totalAttemptsToDelete} linked attempts for those quizzes, and deletes the question record.`,
+    };
+  }
+
+  return { summary: 'Deletes the selected item and all references.' };
+};
+
 const resolveUserTypeFromRecord = (userRecord = {}) => {
   const emailValue = userRecord?.email;
   if (emailValue === null || typeof emailValue === 'undefined') {
@@ -1159,6 +1311,84 @@ export const getAdminUsersSnapshot = async () => {
     const bTime = new Date(b.lastActiveAt || b.createdAt || 0).getTime();
     return bTime - aTime;
   });
+};
+
+const normalizeFeedbackPayload = (payload = {}) => ({
+  reason: payload.reason ? String(payload.reason).trim() : null,
+  urgency: payload.urgency ? String(payload.urgency).trim().toLowerCase() : null,
+  category: payload.category ? String(payload.category).trim().toLowerCase() : null,
+  subject: payload.subject ? String(payload.subject).trim() : null,
+  details: payload.details ? String(payload.details).trim() : null,
+  contextKey: String(payload.contextKey || 'global').trim(),
+  contextLabel: payload.contextLabel ? String(payload.contextLabel).trim() : null,
+  subjectType: payload.subjectType ? String(payload.subjectType).trim() : null,
+  subjectId: payload.subjectId ? String(payload.subjectId).trim() : null,
+  sourcePath: payload.sourcePath ? String(payload.sourcePath).trim() : null,
+  sourceSearch: payload.sourceSearch ? String(payload.sourceSearch).trim() : null,
+  status: payload.status ? String(payload.status).trim().toLowerCase() : 'new',
+  triageNotes: payload.triageNotes ? String(payload.triageNotes).trim() : null,
+  tags: Array.isArray(payload.tags)
+    ? payload.tags.map((tag) => String(tag).trim()).filter(Boolean)
+    : [],
+  user:
+    payload.user && typeof payload.user === 'object'
+      ? {
+        uid: payload.user.uid ? String(payload.user.uid).trim() : null,
+        email: payload.user.email ? String(payload.user.email).trim() : null,
+        displayName: payload.user.displayName ? String(payload.user.displayName).trim() : null,
+        isGuest: Boolean(payload.user.isGuest),
+      }
+      : null,
+});
+
+const mapFeedbackEntry = (snapshot) => {
+  const data = snapshot.data() || {};
+  return {
+    id: snapshot.id,
+    ...data,
+    createdAt: toIsoOrNull(data.createdAt),
+    updatedAt: toIsoOrNull(data.updatedAt),
+  };
+};
+
+export const createFeedbackEntry = async (payload) => {
+  const normalized = normalizeFeedbackPayload(payload);
+
+  const docRef = await addDoc(feedbackCollection, {
+    ...normalized,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return {
+    id: docRef.id,
+    ...normalized,
+  };
+};
+
+export const getFeedbackEntries = async () => {
+  const snapshot = await getDocs(query(feedbackCollection, orderBy('createdAt', 'desc')));
+  return snapshot.docs.map(mapFeedbackEntry);
+};
+
+export const updateFeedbackEntry = async (feedbackId, updates = {}) => {
+  const normalized = normalizeFeedbackPayload(updates);
+  const feedbackRef = doc(db, 'feedbackEntries', feedbackId);
+
+  await updateDoc(feedbackRef, {
+    status: normalized.status || 'new',
+    category: normalized.category,
+    triageNotes: normalized.triageNotes,
+    tags: normalized.tags,
+    updatedAt: serverTimestamp(),
+  });
+
+  const snapshot = await getDoc(feedbackRef);
+  if (!snapshot.exists()) {
+    throw new Error('Feedback entry not found.');
+  }
+
+  return mapFeedbackEntry(snapshot);
 };
 
 const deleteAttemptWithAnswers = async (attemptId) => {

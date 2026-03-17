@@ -3,10 +3,12 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
 import QuizRunner from '@/components/quiz/QuizRunner.jsx';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAttemptQuizSession } from '@/hooks/useAttemptQuizSession.js';
-import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
+import { getUserFriendlyErrorMessage, isConnectionRelatedError } from '@/utils/errorHandling.js';
+import FeedbackButton from '@/components/feedback/FeedbackButton.jsx';
 
 const QuizPage = () => {
   const { id } = useParams();
@@ -16,7 +18,7 @@ const QuizPage = () => {
   const [hasShownLoadError, setHasShownLoadError] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { data: session, isLoading, isError } = useAttemptQuizSession(attemptId);
+  const { data: session, isLoading, isError, error, refetch } = useAttemptQuizSession(attemptId);
   const quiz = useMemo(() => session?.quiz || null, [session]);
 
   useEffect(() => {
@@ -48,11 +50,10 @@ const QuizPage = () => {
     setHasShownLoadError(true);
     toast({
       title: 'Error',
-      description: getUserFriendlyErrorMessage(null, 'Failed to load quiz'),
+      description: getUserFriendlyErrorMessage(error, 'Failed to load quiz'),
       variant: 'destructive',
     });
-    navigate('/quizzes');
-  }, [hasShownLoadError, isError, navigate, toast]);
+  }, [error, hasShownLoadError, isError, toast]);
 
   if (isLoading || !attemptId) {
     return (
@@ -74,9 +75,12 @@ const QuizPage = () => {
     );
   }
 
-  if (!quiz || String(quiz.id || '') !== String(id || '')) {
-    return null;
-  }
+  const hasQuizMatch = quiz && String(quiz.id || '') === String(id || '');
+  const showDataOverlay = !isLoading && (isError || !hasQuizMatch);
+  const overlayTitle = isConnectionRelatedError(error) ? 'Connection issue' : 'Unable to load attempt session';
+  const overlayDescription = isConnectionRelatedError(error)
+    ? 'Quiz attempt data was not loaded due to bad connection.'
+    : 'Quiz session data was not returned. Retry loading.';
 
   return (
     <>
@@ -95,13 +99,32 @@ const QuizPage = () => {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-12">
           <div className="mb-4 md:mb-8">
-            <h1 className="text-3xl font-bold text-slate-900 mb-2 dark:text-white">{quiz.title}</h1>
-            <p className="text-slate-600 dark:text-slate-400 hidden md:block">
-              {quiz.shortDescription || quiz.description || quiz.longDescription}
-            </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900 mb-2 dark:text-white">{quiz.title}</h1>
+                <p className="text-slate-600 dark:text-slate-400 hidden md:block">
+                  {quiz.shortDescription || quiz.description || quiz.longDescription}
+                </p>
+              </div>
+              <FeedbackButton
+                contextKey="quiz_attempt"
+                contextLabel="Quiz Attempt"
+                subjectType="quiz"
+                subjectId={quiz.id}
+                subjectTitle={quiz.title}
+                label="Quiz Feedback"
+              />
+            </div>
           </div>
 
-          <QuizRunner quiz={quiz} attemptId={attemptId} />
+          <DataStatusOverlay
+            isVisible={showDataOverlay}
+            title={overlayTitle}
+            description={overlayDescription}
+            onRetry={() => refetch()}
+          >
+            {hasQuizMatch ? <QuizRunner quiz={quiz} attemptId={attemptId} /> : <div className="min-h-[240px]" />}
+          </DataStatusOverlay>
         </div>
       </div>
     </>

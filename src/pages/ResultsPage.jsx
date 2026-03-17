@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
 import ResultsDashboard from '@/components/results/ResultsDashboard.jsx';
 import ReviewPanel from '@/components/review/ReviewPanel.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
@@ -11,7 +12,7 @@ import { useToast } from '@/components/ui/use-toast.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
 import { useResults } from '@/hooks/useResults.js';
 import { useProgressInsights } from '@/hooks/useProgressInsights.js';
-import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
+import { getUserFriendlyErrorMessage, isConnectionRelatedError } from '@/utils/errorHandling.js';
 
 const DiscussionThread = lazy(() => import('@/components/discussion/DiscussionThread.jsx'));
 
@@ -24,7 +25,7 @@ const ResultsPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isDevFeaturesEnabled } = useAuth();
-  const { data: results, isLoading, isError } = useResults(attemptId);
+  const { data: results, isLoading, error, refetch } = useResults(attemptId);
   const { data: progressInsights, isLoading: isProgressInsightsLoading } = useProgressInsights();
 
   useEffect(() => {
@@ -50,7 +51,7 @@ const ResultsPage = () => {
     window.scrollTo(0, 0);
   }, []);
 
-  if (isLoading || !results) {
+  if (isLoading) {
     return (
       <>
         <Helmet>
@@ -64,6 +65,32 @@ const ResultsPage = () => {
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto dark:border-indigo-400"></div>
               <p className="mt-4 text-slate-600 dark:text-slate-400">Loading results...</p>
             </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (!results) {
+    return (
+      <>
+        <Helmet>
+          <title>Results - QuizMaster</title>
+        </Helmet>
+        <div className="min-h-screen">
+          <Navbar onOpenSettings={() => setIsSettingsOpen(true)} />
+          <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <DataStatusOverlay
+              isVisible
+              title={isConnectionRelatedError(error) ? 'Connection issue' : 'Unable to load results'}
+              description={isConnectionRelatedError(error)
+                ? 'Results data could not be loaded due to a bad connection.'
+                : getUserFriendlyErrorMessage(error, 'Results data was not returned.')}
+              onRetry={() => refetch()}
+            >
+              <div className="min-h-[260px]" />
+            </DataStatusOverlay>
           </div>
         </div>
       </>

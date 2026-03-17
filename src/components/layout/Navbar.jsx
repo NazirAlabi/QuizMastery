@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth.js';
 import { useTheme } from '@/context/ThemeContext.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { GraduationCap, BookOpen, Home, LogOut, Menu, X, Sun, Moon, Wrench, Settings, LineChart } from 'lucide-react';
+import { GraduationCap, BookOpen, Home, LogOut, Menu, X, Sun, Moon, Wrench, Settings, LineChart, MessageSquareText } from 'lucide-react';
 import { appendReturnUrl } from '@/utils/returnUrl.js';
 
 const getRelativeTimeGreeting = (date = new Date()) => {
@@ -81,49 +81,55 @@ const Navbar = ({ onOpenSettings }) => {
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-4">
-            {/* <Link to="/">
-              <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
-                <Home className="h-4 w-4 mr-2" />
-                Home
-              </Button>
-            </Link> */}
-            <Link to="/quizzes">
-              <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
-                <GraduationCap className="h-4 w-4 mr-2" />
-                Quizzes
-              </Button>
-            </Link>
-            <Link to="/courses">
-              <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
-                <BookOpen className="h-4 w-4 mr-2" />
-                Courses
-              </Button>
-            </Link>
-            <Link to="/insights">
-              <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
-                <LineChart className="h-4 w-4 mr-2" />
-                Progress & History
-              </Button>
-            </Link>
-            {isDevFeaturesEnabled && (
-              <Link to="/dev/content">
-                <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
-                  <Wrench className="h-4 w-4 mr-2" />
-                  Content
-                </Button>
-              </Link>
-            )}
-            {isDevFeaturesEnabled && (
-              <Link to="/dev/users">
-                <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
-                  <Wrench className="h-4 w-4 mr-2" />
-                  Users
-                </Button>
-              </Link>
-            )}
+          <div className="hidden md:flex items-center gap-3 min-w-0 flex-1 justify-end">
+            <div className="min-w-0 max-w-[52vw] overflow-x-auto overscroll-x-contain whitespace-nowrap">
+              <div className="flex items-center gap-1 pr-2">
+                <Link to="/quizzes">
+                  <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
+                    <GraduationCap className="h-4 w-4 mr-2" />
+                    Quizzes
+                  </Button>
+                </Link>
+                <Link to="/courses">
+                  <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
+                    <BookOpen className="h-4 w-4 mr-2" />
+                    Courses
+                  </Button>
+                </Link>
+                <Link to="/insights">
+                  <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
+                    <LineChart className="h-4 w-4 mr-2" />
+                    Progress & History
+                  </Button>
+                </Link>
+                {isDevFeaturesEnabled && (
+                  <Link to="/dev/content">
+                    <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
+                      <Wrench className="h-4 w-4 mr-2" />
+                      Content
+                    </Button>
+                  </Link>
+                )}
+                {isDevFeaturesEnabled && (
+                  <Link to="/dev/users">
+                    <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
+                      <Wrench className="h-4 w-4 mr-2" />
+                      Users
+                    </Button>
+                  </Link>
+                )}
+                {isDevFeaturesEnabled && (
+                  <Link to="/dev/feedback">
+                    <Button variant="ghost" className="text-slate-700 hover:text-indigo-700 dark:text-slate-300 dark:hover:text-indigo-400">
+                      <MessageSquareText className="h-4 w-4 mr-2" />
+                      Feedback
+                    </Button>
+                  </Link>
+                )}
+              </div>
+            </div>
 
-            <div className="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-slate-800">
+            <div className="flex shrink-0 items-center gap-3 pl-3 border-l border-slate-200 dark:border-slate-800">
               {canToggleDevFeatures && (
                 <Button
                   type="button"
@@ -343,6 +349,18 @@ const Navbar = ({ onOpenSettings }) => {
                 <Button variant="ghost" className="w-full justify-start text-slate-700 hover:text-indigo-700 h-12 text-base dark:text-slate-300 dark:hover:text-indigo-400">
                   <Wrench className="h-5 w-5 mr-3" />
                   Users Dashboard
+                </Button>
+              </Link>
+            )}
+            {isDevFeaturesEnabled && (
+              <Link
+                to="/dev/feedback"
+                onClick={() => setIsMenuOpen(false)}
+                className="block"
+              >
+                <Button variant="ghost" className="w-full justify-start text-slate-700 hover:text-indigo-700 h-12 text-base dark:text-slate-300 dark:hover:text-indigo-400">
+                  <MessageSquareText className="h-5 w-5 mr-3" />
+                  Feedback Dashboard
                 </Button>
               </Link>
             )}

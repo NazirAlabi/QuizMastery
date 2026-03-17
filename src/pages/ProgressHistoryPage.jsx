@@ -3,19 +3,33 @@ import { Helmet } from 'react-helmet';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
 import ProgressInsightsCard from '@/components/results/ProgressInsightsCard.jsx';
 import AttemptHistoryList from '@/components/results/AttemptHistoryList.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { useProgressInsights } from '@/hooks/useProgressInsights.js';
 import { useUserAttempts } from '@/hooks/useUserAttempts.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx';
+import { getUserFriendlyErrorMessage, isConnectionRelatedError } from '@/utils/errorHandling.js';
 
 const ProgressHistoryPage = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('insights');
   const navigate = useNavigate();
-  const { data: progressInsights, isLoading: isInsightsLoading, isError: isInsightsError } = useProgressInsights();
-  const { data: userAttempts, isLoading: isAttemptsLoading, isError: isAttemptsError } = useUserAttempts();
+  const {
+    data: progressInsights,
+    isLoading: isInsightsLoading,
+    isError: isInsightsError,
+    error: insightsError,
+    refetch: refetchInsights,
+  } = useProgressInsights();
+  const {
+    data: userAttempts,
+    isLoading: isAttemptsLoading,
+    isError: isAttemptsError,
+    error: attemptsError,
+    refetch: refetchAttempts,
+  } = useUserAttempts();
 
   return (
     <>
@@ -48,23 +62,25 @@ const ProgressHistoryPage = () => {
             </TabsList>
 
             <TabsContent value="insights" className="space-y-6">
-              {isInsightsError ? (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-                  Failed to load progress insights. Please try again later.
-                </div>
-              ) : (
+              <DataStatusOverlay
+                isVisible={isInsightsError}
+                title={isConnectionRelatedError(insightsError) ? 'Connection issue' : 'Insights unavailable'}
+                description={getUserFriendlyErrorMessage(insightsError, 'Failed to load progress insights.')}
+                onRetry={() => refetchInsights()}
+              >
                 <ProgressInsightsCard progressInsights={progressInsights} loading={isInsightsLoading} />
-              )}
+              </DataStatusOverlay>
             </TabsContent>
 
             <TabsContent value="history">
-              {isAttemptsError ? (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
-                  Failed to load attempt history. Please try again later.
-                </div>
-              ) : (
+              <DataStatusOverlay
+                isVisible={isAttemptsError}
+                title={isConnectionRelatedError(attemptsError) ? 'Connection issue' : 'History unavailable'}
+                description={getUserFriendlyErrorMessage(attemptsError, 'Failed to load attempt history.')}
+                onRetry={() => refetchAttempts()}
+              >
                 <AttemptHistoryList attempts={userAttempts} loading={isAttemptsLoading} />
-              )}
+              </DataStatusOverlay>
             </TabsContent>
           </Tabs>
 

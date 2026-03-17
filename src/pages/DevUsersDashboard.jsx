@@ -3,6 +3,7 @@ import { Helmet } from 'react-helmet';
 import { Navigate } from 'react-router-dom';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
+import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
 import { useAuth } from '@/hooks/useAuth.js';
 import { useToast } from '@/components/ui/use-toast.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -11,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { deleteAdminGuestUsers, getAdminUsersSnapshot, cleanupStaleAttempts } from '@/api/api.js';
-import { getUserFriendlyErrorMessage } from '@/utils/errorHandling.js';
+import { getUserFriendlyErrorMessage, isConnectionRelatedError } from '@/utils/errorHandling.js';
 
 const computeInactiveDays = (user) => {
   const lastActive = user?.lastActiveAt || user?.createdAt;
@@ -35,6 +36,8 @@ const DevUsersDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCleaningAttempts, setIsCleaningAttempts] = useState(false);
+  const [usersLoadError, setUsersLoadError] = useState(null);
+  const [showRefreshPrompt, setShowRefreshPrompt] = useState(false);
   const [users, setUsers] = useState([]);
   const [inactiveDaysThreshold, setInactiveDaysThreshold] = useState(30);
   const [showOnlyInactiveGuests, setShowOnlyInactiveGuests] = useState(true);
@@ -45,7 +48,10 @@ const DevUsersDashboard = () => {
     try {
       const snapshot = await getAdminUsersSnapshot();
       setUsers(Array.isArray(snapshot) ? snapshot : []);
+      setUsersLoadError(null);
+      setShowRefreshPrompt(false);
     } catch (error) {
+      setUsersLoadError(error);
       toast({
         title: 'Failed to load users',
         description: getUserFriendlyErrorMessage(error, 'Could not fetch users snapshot.'),
@@ -79,6 +85,7 @@ const DevUsersDashboard = () => {
         title: 'Cleanup successful',
         description: `Deleted ${result.deletedCount} stale 'in_progress' attempts (older than 1h).`,
       });
+      setShowRefreshPrompt(true);
     } catch (error) {
       toast({
         title: 'Cleanup failed',
@@ -134,6 +141,7 @@ const DevUsersDashboard = () => {
       const result = await deleteAdminGuestUsers(selectedGuestIds);
       setSelectedGuestIds([]);
       await loadUsers();
+      setShowRefreshPrompt(true);
       toast({
         title: 'Guest cleanup completed',
         description: `Deleted ${result.deletedUsers} guests, ${result.deletedAttempts} attempts, and ${result.deletedAnswers} answers.`,
@@ -160,12 +168,19 @@ const DevUsersDashboard = () => {
         <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
         <div className="max-w-[95%] mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 space-y-6">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Dev Users Dashboard</h1>
-            <p className="text-slate-600 dark:text-slate-400">
-              Inspect all users, filter inactive guests (email is missing), and clean up guest accounts with linked
-              attempts.
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Dev Users Dashboard</h1>
+              <p className="text-slate-600 dark:text-slate-400">
+                Inspect all users, filter inactive guests (email is missing), and clean up guest accounts with linked
+                attempts.
+              </p>
+            </div>
+            {showRefreshPrompt ? (
+              <Button type="button" variant="outline" onClick={loadUsers}>
+                Refresh Data
+              </Button>
+            ) : null}
           </div>
 
           <Card className="border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30">
@@ -183,7 +198,12 @@ const DevUsersDashboard = () => {
               <p className="mt-4 text-slate-600 dark:text-slate-400">Loading users...</p>
             </div>
           ) : (
-            <>
+            <DataStatusOverlay
+              isVisible={Boolean(usersLoadError)}
+              title={isConnectionRelatedError(usersLoadError) ? 'Connection issue' : 'Unable to load users'}
+              description={getUserFriendlyErrorMessage(usersLoadError, 'User objects were not loaded.')}
+              onRetry={loadUsers}
+            >
               <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                   <CardHeader className="pb-2">
@@ -339,7 +359,7 @@ const DevUsersDashboard = () => {
                   ))}
                 </CardContent>
               </Card>
-            </>
+            </DataStatusOverlay>
           )}
         </div>
       </div>
