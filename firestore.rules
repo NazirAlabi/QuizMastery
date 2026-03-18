@@ -63,6 +63,11 @@ service cloud.firestore {
       allow read, create, update, delete: if true;
     }
 
+    // ADMIN NOTES
+    match /adminNotes/{noteId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
     // USER ATTEMPTS
     match /userAttempts/{attemptId} {
 

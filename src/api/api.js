@@ -42,6 +42,7 @@ const discussionsCollection = collection(db, 'questionDiscussions');
 const usersCollection = collection(db, 'users');
 const attemptsCollection = collection(db, 'userAttempts');
 const feedbackCollection = collection(db, 'feedbackEntries');
+const adminNotesCollection = collection(db, 'adminNotes');
 
 const SCORE_LEVELS = {
   EXCELLENT: 90,
@@ -1201,40 +1202,163 @@ export const hardDeleteQuestion = async (questionId) => {
   return questionRepository.deleteQuestion(questionId);
 };
 
+const normalizeAdminNotePayload = (payload = {}) => ({
+  title: String(payload?.title || '').trim(),
+  text: typeof payload?.text === 'string' ? payload.text : String(payload?.text || ''),
+});
+
+const mapAdminNote = (snapshot) => {
+  const data = snapshot.data() || {};
+  return {
+    id: snapshot.id,
+    title: String(data?.title || '').trim(),
+    text: typeof data?.text === 'string' ? data.text : String(data?.text || ''),
+    createdAt: toIsoOrNull(data?.createdAt),
+    updatedAt: toIsoOrNull(data?.updatedAt || data?.lastModified),
+  };
+};
+
+export const getAdminNotes = async () => {
+  const notesSnapshot = await getDocs(query(adminNotesCollection, orderBy('updatedAt', 'desc')));
+  return notesSnapshot.docs.map(mapAdminNote);
+};
+
+export const createAdminNote = async (payload = {}) => {
+  const normalized = normalizeAdminNotePayload(payload);
+  const nowFallback = new Date().toISOString();
+
+  const createdRef = await addDoc(adminNotesCollection, {
+    title: normalized.title || 'Untitled note',
+    text: normalized.text,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  const createdSnapshot = await getDoc(doc(db, 'adminNotes', createdRef.id));
+  if (!createdSnapshot.exists()) {
+    return {
+      id: createdRef.id,
+      title: normalized.title || 'Untitled note',
+      text: normalized.text,
+      createdAt: nowFallback,
+      updatedAt: nowFallback,
+    };
+  }
+
+  return mapAdminNote(createdSnapshot);
+};
+
+export const updateAdminNote = async (noteId, payload = {}) => {
+  const normalized = normalizeAdminNotePayload(payload);
+  const noteRef = doc(db, 'adminNotes', noteId);
+
+  await updateDoc(noteRef, {
+    title: normalized.title || 'Untitled note',
+    text: normalized.text,
+    updatedAt: serverTimestamp(),
+  });
+
+  const updatedSnapshot = await getDoc(noteRef);
+  if (!updatedSnapshot.exists()) {
+    throw new Error('Note not found after update');
+  }
+
+  return mapAdminNote(updatedSnapshot);
+};
+
+export const hardDeleteAdminNote = async (noteId) => {
+  await deleteDoc(doc(db, 'adminNotes', noteId));
+  return { id: noteId };
+};
+
+const pluralize = (count, singular, plural = `${singular}s`) =>
+  `${count} ${count === 1 ? singular : plural}`;
+
 export const getDeleteImpact = async (type, id) => {
+  const selectedIds = uniqueOrderedIds(Array.isArray(id) ? id : [id]);
+  if (selectedIds.length === 0) {
+    return { summary: 'Deletes the selected item and all references.' };
+  }
+
   if (type === 'course') {
+    if (selectedIds.length > 1) {
+      return {
+        summary: `Permanently deletes ${pluralize(selectedIds.length, 'course document')}. Linked quizzes will exist independently.`,
+      };
+    }
+
     return {
       summary: 'Permanently deletes this course document. Linked quizzes will exist independently.',
     };
   }
 
   if (type === 'quiz') {
-    const associatedCourses = await courseRepository.getCoursesByQuizId(id);
-    const attemptsSnapshot = await getDocs(query(attemptsCollection, where('quizId', '==', id)));
+    const impactedCourseIds = new Set();
+    const impactedAttemptIds = new Set();
+
+    const quizImpactEntries = await Promise.all(
+      selectedIds.map(async (quizId) => {
+        const [associatedCourses, attemptsSnapshot] = await Promise.all([
+          courseRepository.getCoursesByQuizId(quizId),
+          getDocs(query(attemptsCollection, where('quizId', '==', quizId))),
+        ]);
+        return { associatedCourses, attemptsSnapshot };
+      })
+    );
+
+    quizImpactEntries.forEach(({ associatedCourses, attemptsSnapshot }) => {
+      associatedCourses.forEach((course) => impactedCourseIds.add(course.id));
+      attemptsSnapshot.docs.forEach((attemptDoc) => impactedAttemptIds.add(attemptDoc.id));
+    });
+
+    if (selectedIds.length > 1) {
+      return {
+        summary: `Removes from ${pluralize(impactedCourseIds.size, 'course')}, deletes ${pluralize(impactedAttemptIds.size, 'attempt')}, and deletes ${pluralize(selectedIds.length, 'quiz document')}.`,
+      };
+    }
+
     return {
-      summary: `Removes from ${associatedCourses.length} courses, deletes ${attemptsSnapshot.size} attempts, and deletes the quiz document.`,
+      summary: `Removes from ${impactedCourseIds.size} courses, deletes ${impactedAttemptIds.size} attempts, and deletes the quiz document.`,
     };
   }
 
   if (type === 'question') {
-    const quizzesSnapshot = await getDocs(
-      query(collection(db, 'quizzes'), where('questionIds', 'array-contains', id))
-    );
-    const quizIds = quizzesSnapshot.docs.map((doc) => doc.id);
-    let totalAttemptsToDelete = 0;
+    const impactedQuizIds = new Set();
+    const impactedDiscussionIds = new Set();
+    const impactedAttemptIds = new Set();
 
-    // Direct loop for clarity in dev mode; avoid 'in' query chunk complexity for impact summary
-    for (const quizId of quizIds) {
-      const attemptsSnapshot = await getDocs(query(attemptsCollection, where('quizId', '==', quizId)));
-      totalAttemptsToDelete += attemptsSnapshot.size;
+    const questionImpactEntries = await Promise.all(
+      selectedIds.map(async (questionId) => {
+        const [quizzesSnapshot, discussionSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'quizzes'), where('questionIds', 'array-contains', questionId))),
+          getDocs(query(discussionsCollection, where('question_id', '==', questionId))),
+        ]);
+        return { quizzesSnapshot, discussionSnapshot };
+      })
+    );
+
+    questionImpactEntries.forEach(({ quizzesSnapshot, discussionSnapshot }) => {
+      quizzesSnapshot.docs.forEach((quizDoc) => impactedQuizIds.add(quizDoc.id));
+      discussionSnapshot.docs.forEach((discussionDoc) => impactedDiscussionIds.add(discussionDoc.id));
+    });
+
+    const attemptsByQuizEntries = await Promise.all(
+      Array.from(impactedQuizIds).map(async (quizId) =>
+        getDocs(query(attemptsCollection, where('quizId', '==', quizId)))
+      )
+    );
+    attemptsByQuizEntries.forEach((attemptsSnapshot) => {
+      attemptsSnapshot.docs.forEach((attemptDoc) => impactedAttemptIds.add(attemptDoc.id));
+    });
+
+    if (selectedIds.length > 1) {
+      return {
+        summary: `Removes from ${pluralize(impactedQuizIds.size, 'quiz')}, deletes ${pluralize(impactedDiscussionIds.size, 'discussion')}, deletes ${pluralize(impactedAttemptIds.size, 'linked attempt')} for impacted quizzes, and deletes ${pluralize(selectedIds.length, 'question record')}.`,
+      };
     }
 
-    const discussionSnapshot = await getDocs(
-      query(discussionsCollection, where('question_id', '==', id))
-    );
-
     return {
-      summary: `Removes from ${quizzesSnapshot.size} quizzes, deletes ${discussionSnapshot.size} discussions, deletes ${totalAttemptsToDelete} linked attempts for those quizzes, and deletes the question record.`,
+      summary: `Removes from ${impactedQuizIds.size} quizzes, deletes ${impactedDiscussionIds.size} discussions, deletes ${impactedAttemptIds.size} linked attempts for those quizzes, and deletes the question record.`,
     };
   }
 

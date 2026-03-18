@@ -1,6 +1,5 @@
 **Now**
 
-
 **Soon**
 Allow a code to be typed in settings from any user profile to turn on dev mode. The code should be stored as a hash in firestore to prevent authorization by peeking in the code in console. And the feature should be in some Advanced in settings
 
@@ -9,6 +8,9 @@ Allow a code to be typed in settings from any user profile to turn on dev mode. 
 
 
 **Done**
+1.Add a tab in content to create, store, view, edit and delete some sort of 'notes' with text that retain stuff like tabs, newlines and whitespace. They could just be firestore documents with title and text fields along with timestamps  of creation and modifications. It should just be a list of documents such that upon clicking one, the list becomes a left pane and the clicked document is enlarged to fill the rest of the tab content area with the title being bigger at the top. The mobile view should be some other more mobile friendly design.
+2.Make it so the in delete manager, even when multiple objects are selected, the impact summary is still calculated
+
 Add a button above the current content of the generate ai prompt in json schema mode in create new quiz from upload to copy the prompt the quiz description prompt text currently in the relevant file in prompts in public. You can do it the same way as the templates, just copy and paste the text as the assignment of some variable in dev content and use that directly
 
 1.Make it so if no requested data objects are gotten due to bad connection in any page, an overlay blurs out the relevant parts of the page and shows that there's none or bad connection with a button to retry.

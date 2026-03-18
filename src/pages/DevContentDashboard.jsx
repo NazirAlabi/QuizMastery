@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Navigate } from 'react-router-dom';
-import { Archive, ArchiveRestore, Loader2, Plus, Trash2, Upload, ChevronDown, Copy, CheckCircle2, Search, AlertTriangle } from 'lucide-react';
+import { Archive, ArchiveRestore, Loader2, Plus, Trash2, Upload, ChevronDown, Copy, CheckCircle2, Search, AlertTriangle, ArrowLeft } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar.jsx';
 import SettingsModal from '@/components/layout/SettingsModal.jsx';
 import DataStatusOverlay from '@/components/layout/DataStatusOverlay.jsx';
@@ -23,14 +23,18 @@ import {
   createAdminQuestion,
   createAdminQuiz,
   createQuizFromQuestionUpload,
+  createAdminNote,
   getAdminContentSnapshot,
+  getAdminNotes,
   getDeleteImpact,
+  hardDeleteAdminNote,
   hardDeleteCourse,
   hardDeleteQuestion,
   hardDeleteQuiz,
   removeDuplicateAdminContent,
   removeQuestionFromQuiz,
   updateAdminCourse,
+  updateAdminNote,
   updateAdminQuestion,
   updateAdminQuiz,
 } from '@/api/api.js';
@@ -475,87 +479,85 @@ INPUT: Current Set = [INSERT SAMPLE QUESTION SET]
       Target Difficulty = [TARGET DIFFICULTY]`;
 
 const QUIZ_DESCRIPTION_PROMPT_TEMPLATE = `Role
-You are an expert instructional designer and educational researcher specializing in cognitive load theory and curriculum development.
+You are an expert instructional designer specializing in cognitive load theory, knowledge structuring, and assessment design.
 
 Task
-Given the provided learning material (e.g., slides, notes, or text), analyze the content and generate a structured, multi-tier quiz blueprint that optimizes for learning, retention, and conceptual transfer.
+Given the provided learning material, generate a structured three-tier quiz blueprint that maximizes understanding, retention, and transfer.
 
 Autonomy Requirement (CRITICAL)
 
-Do NOT ask clarifying questions.
+Do NOT ask clarifying questions
 
-Infer all structure directly from the material.
+Infer all structure directly from the material
 
-If ambiguity exists, make the most pedagogically reasonable assumption.
+If ambiguity exists, make the most pedagogically sound assumption
 
-If the material is incomplete, still produce the best possible structured output.
+If incomplete, still produce the best possible structure
 
-Design Framework
-Step 1 - Extract Conceptual Zones
+Design Requirements
 
-Identify 5-8 distinct conceptual zones from the material.
+1. Conceptual Zones
 
-Each zone must:
+Identify 5–8 conceptual zones
 
-Represent a coherent chunk of knowledge
+Each zone must represent a distinct, testable chunk of knowledge
 
-Be mutually distinct (minimal overlap)
+Zones must collectively cover the material without redundancy
 
-Be collectively exhaustive (cover the material)
-
-Tier 1 - Fundamentals (Decomposition)
+2. Quiz Tiers
+Tier 1 — Foundations (Encoding)
 
 Create 1 quiz per conceptual zone
 
-Each quiz must:
+Each quiz:
 
-Cover 1-2 tightly related subtopics
+Focuses on core principles, definitions, or mechanisms
 
-Focus on core definitions, mechanisms, or principles
+Covers 1–2 tightly related subtopics
 
-Include 6-8 questions (recommended)
+Contains 6–8 questions (recommended)
 
-Tier 2 - Integration (Connection)
+Tier 2 — Integration (Connection & Application)
 
-Create 2-3 quizzes total
+Create 2–3 quizzes total
 
-Each quiz must:
+Each quiz:
 
-Combine 2-3 conceptual zones
+Combines 2–3 conceptual zones
 
-Emphasize:
+Emphasizes:
 
 Relationships between concepts
 
 Multi-step reasoning
 
-Application scenarios
+Applied scenarios
 
-Tier 3 - Capstone (Synthesis)
+Tier 3 — Capstone (Transfer & Synthesis)
 
 Create 1 comprehensive quiz
 
 Must:
 
-Cover the entire material
+Span the full material
 
-Emphasize deep understanding and transfer
+Emphasize deep understanding, abstraction, and transfer
 
-Constraints
+3. Constraints
 
 Maximum 3 major concepts per quiz
 
-Avoid vague or generic topic names (e.g., "Overview", "Miscellaneous")
-
-Focus topics must be:
+Topic names must be:
 
 Specific
 
 Testable
 
-Derived from the material (not invented externally)
+Clearly derived from the material
 
-Output Format (STRICT - DO NOT DEVIATE)
+Avoid vague labels (e.g., “Overview”, “General Concepts”)
+
+4. Output Format (STRICT)
 subject_name: "<inferred subject name>"
 
 conceptual_zones:
@@ -564,38 +566,32 @@ conceptual_zones:
 
 tier_1_quizzes:
   - quiz_name: "<name>"
-    zone: "<corresponding conceptual zone>"
-    focus_topics: ["<specific subtopic>", "<specific subtopic>"]
+    zone: "<conceptual zone>"
+    focus_topics: ["<subtopic>", "<subtopic>"]
     estimated_questions: 6-8
 
 tier_2_quizzes:
   - quiz_name: "<name>"
     integrated_zones: ["<zone>", "<zone>"]
-    focus_topics: ["<applied or integrative task>", "<...>"]
+    focus_topics: ["<applied task>", "<...>"]
 
 tier_3_capstone:
   quiz_name: "<name>"
   scope: "Comprehensive"
   focus: ["<synthesis area>", "<...>"]
-Behavior Rules
+5. Behavior Rules
 
-Do NOT generate actual questions.
+Do NOT generate actual questions
 
-Do NOT paraphrase the material - extract structure from it.
+Do NOT paraphrase the material
 
 Ensure:
 
 Every Tier 1 quiz maps to exactly one conceptual zone
 
-Every Tier 2 quiz explicitly combines zones listed above
+Every Tier 2 quiz explicitly combines listed zones
 
-Keep naming:
-
-Clear
-
-Consistent
-
-Instructionally meaningful`;
+Use clear, consistent, instructionally meaningful naming`;
 
 const BULK_UPLOAD_TEMPLATE = '{\n  "questions": []\n}';
 
@@ -613,6 +609,10 @@ const BULK_DEFAULTS = {
 };
 const BULK_QUESTION_DEFAULTS = {
   uploadText: BULK_UPLOAD_TEMPLATE,
+};
+const NOTE_DEFAULTS = {
+  title: '',
+  text: '',
 };
 
 const QUIZ_SHORT_DESC_EXAMPLE = 'Deep dive into Big O notation, time complexity, and algorithm optimization techniques in this quiz';
@@ -663,6 +663,16 @@ const truncateText = (value, maxLength = 56) => {
 
 const formatQuestionLabel = (question, maxLength = 72) =>
   `${question?.topic || 'General'} - ${truncateText(question?.question_text || '', maxLength)}`;
+
+const formatDashboardTimestamp = (value) => {
+  if (!value) return 'Unknown';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Unknown';
+  return parsed.toLocaleString();
+};
+
+const notePreviewText = (value, maxLength = 92) =>
+  truncateText(String(value || '').replace(/\s+/g, ' ').trim(), maxLength);
 
 const normalizeQuestionUploadPayload = (payload) => {
   const candidate = Array.isArray(payload)
@@ -801,6 +811,16 @@ const DevContentDashboard = () => {
   });
   const [showVariationPromptOptions, setShowVariationPromptOptions] = useState(false);
   const [targetVariationDifficulty, setTargetVariationDifficulty] = useState(2);
+  const [notes, setNotes] = useState([]);
+  const [isNotesLoading, setIsNotesLoading] = useState(true);
+  const [notesLoadError, setNotesLoadError] = useState(null);
+  const [noteSearch, setNoteSearch] = useState('');
+  const [selectedNoteId, setSelectedNoteId] = useState('');
+  const [noteForm, setNoteForm] = useState(NOTE_DEFAULTS);
+  const [isCreatingNote, setIsCreatingNote] = useState(false);
+  const [notesMobileView, setNotesMobileView] = useState('list');
+  const [isNoteSaving, setIsNoteSaving] = useState(false);
+  const [isNoteDeleting, setIsNoteDeleting] = useState(false);
 
   // Delete Manager state
   const [deleteManagerType, setDeleteManagerType] = useState('course');
@@ -822,6 +842,10 @@ const DevContentDashboard = () => {
   const selectedQuestion = useMemo(
     () => questions.find((question) => question.id === selectedQuestionId) || null,
     [questions, selectedQuestionId]
+  );
+  const selectedNote = useMemo(
+    () => notes.find((note) => note.id === selectedNoteId) || null,
+    [notes, selectedNoteId]
   );
   const selectedBulkQuiz = useMemo(
     () => quizzes.find((quiz) => quiz.id === bulkForm.selectedQuizId) || null,
@@ -853,6 +877,24 @@ const DevContentDashboard = () => {
       ),
     [questions]
   );
+  const sortedNotes = useMemo(
+    () =>
+      [...notes].sort((a, b) => {
+        const aTime = new Date(a?.updatedAt || a?.createdAt || 0).getTime();
+        const bTime = new Date(b?.updatedAt || b?.createdAt || 0).getTime();
+        return bTime - aTime;
+      }),
+    [notes]
+  );
+  const filteredNotes = useMemo(() => {
+    const term = String(noteSearch || '').trim().toLowerCase();
+    if (!term) return sortedNotes;
+    return sortedNotes.filter((note) => {
+      const title = String(note?.title || '').toLowerCase();
+      const text = String(note?.text || '').toLowerCase();
+      return title.includes(term) || text.includes(term) || String(note?.id || '').toLowerCase().includes(term);
+    });
+  }, [noteSearch, sortedNotes]);
 
 const groupedQuizzes = useMemo(() => {
   const groups = new Map();
@@ -1005,6 +1047,38 @@ const groupedQuizzes = useMemo(() => {
     });
   };
 
+  const selectNoteForEditing = (note) => {
+    if (!note?.id) return;
+    setSelectedNoteId(note.id);
+    setNoteForm({
+      title: String(note.title || ''),
+      text: typeof note.text === 'string' ? note.text : String(note.text || ''),
+    });
+    setIsCreatingNote(false);
+    setNotesMobileView('detail');
+  };
+
+  const startCreatingNote = () => {
+    setIsCreatingNote(true);
+    setSelectedNoteId('');
+    setNoteForm(NOTE_DEFAULTS);
+    setNotesMobileView('detail');
+  };
+
+  const loadNotes = async () => {
+    setIsNotesLoading(true);
+    try {
+      const fetchedNotes = await getAdminNotes();
+      setNotes(fetchedNotes || []);
+      setNotesLoadError(null);
+    } catch (error) {
+      setNotesLoadError(error);
+      setNotes([]);
+    } finally {
+      setIsNotesLoading(false);
+    }
+  };
+
   const loadAllContent = async (showLoader = true) => {
     if (showLoader) {
       setIsLoading(true);
@@ -1030,6 +1104,8 @@ const groupedQuizzes = useMemo(() => {
         setIsLoading(false);
       }
     }
+
+    await loadNotes();
   };
 
   useEffect(() => {
@@ -1092,6 +1168,32 @@ const groupedQuizzes = useMemo(() => {
       isArchived: Boolean(selectedQuestion.isArchived),
     });
   }, [selectedQuestion]);
+
+  useEffect(() => {
+    if (isCreatingNote || !selectedNoteId) return;
+    const latestSelectedNote = notes.find((note) => note.id === selectedNoteId) || null;
+    if (!latestSelectedNote) {
+      if (notes.length > 0) {
+        const firstNote = notes[0];
+        setSelectedNoteId(firstNote.id);
+        setNoteForm({
+          title: String(firstNote.title || ''),
+          text: typeof firstNote.text === 'string' ? firstNote.text : String(firstNote.text || ''),
+        });
+        setIsCreatingNote(false);
+      } else {
+        setSelectedNoteId('');
+        setNoteForm(NOTE_DEFAULTS);
+      }
+      return;
+    }
+    setNoteForm({
+      title: String(latestSelectedNote.title || ''),
+      text: typeof latestSelectedNote.text === 'string'
+        ? latestSelectedNote.text
+        : String(latestSelectedNote.text || ''),
+    });
+  }, [notes, selectedNoteId, isCreatingNote]);
 
   useEffect(() => {
     setQuizToAddToCourseId('');
@@ -2341,6 +2443,79 @@ Return only the description text.`;
     }
   };
 
+  const handleSaveNote = async () => {
+    const nextPayload = {
+      title: String(noteForm.title || '').trim(),
+      text: typeof noteForm.text === 'string' ? noteForm.text : String(noteForm.text || ''),
+    };
+
+    if (!nextPayload.title && !nextPayload.text.trim()) {
+      toast({
+        title: 'Nothing to save',
+        description: 'Add a title or note text first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsNoteSaving(true);
+    try {
+      if (isCreatingNote || !selectedNoteId) {
+        const createdNote = await createAdminNote(nextPayload);
+        await loadNotes();
+        setSelectedNoteId(createdNote.id);
+        setIsCreatingNote(false);
+        setNotesMobileView('detail');
+        toast({
+          title: 'Note created',
+          description: 'Your note was saved to Firestore.',
+        });
+      } else {
+        await updateAdminNote(selectedNoteId, nextPayload);
+        await loadNotes();
+        setNotesMobileView('detail');
+        toast({
+          title: 'Note updated',
+          description: 'Your note changes were saved.',
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Unable to save note',
+        description: getUserFriendlyErrorMessage(error, 'Please try saving again.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsNoteSaving(false);
+    }
+  };
+
+  const handleDeleteNote = async () => {
+    if (!selectedNoteId || isCreatingNote) return;
+
+    setIsNoteDeleting(true);
+    try {
+      await hardDeleteAdminNote(selectedNoteId);
+      await loadNotes();
+      setSelectedNoteId('');
+      setNoteForm(NOTE_DEFAULTS);
+      setIsCreatingNote(false);
+      setNotesMobileView('list');
+      toast({
+        title: 'Note deleted',
+        description: 'The selected note has been removed.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Unable to delete note',
+        description: getUserFriendlyErrorMessage(error, 'Please try deleting again.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsNoteDeleting(false);
+    }
+  };
+
   const filteredDeleteItems = useMemo(() => {
     let source = [];
     if (deleteManagerType === 'course') source = courses;
@@ -2397,9 +2572,9 @@ Return only the description text.`;
 
     try {
       if (isMultiple) {
-        setDeleteImpact({ 
-          summary: `Deletes ${itemOrItems.length} selected ${type}s and all their cascading references/data.` 
-        });
+        const selectedIds = itemOrItems.map((item) => item.id);
+        const impact = await getDeleteImpact(type, selectedIds);
+        setDeleteImpact(impact);
       } else {
         const impact = await getDeleteImpact(type, itemOrItems.id);
         setDeleteImpact(impact);
@@ -2694,6 +2869,7 @@ Return only the description text.`;
                 <TabsTrigger value="bulk-questions">Bulk Upload Questions</TabsTrigger>
                 <TabsTrigger value="dedupe">Bulk Remove Duplicates</TabsTrigger>
                 <TabsTrigger value='question-check'>Question Check</TabsTrigger>
+                <TabsTrigger value="notes">Notes</TabsTrigger>
                 <TabsTrigger value="delete-manager">Delete Manager</TabsTrigger>
               </TabsList>
 
@@ -4255,6 +4431,277 @@ Return only the description text.`;
                           </>
                         )}
                       </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="notes">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Notes</CardTitle>
+                    <CardDescription>
+                      Create, store, view, edit, and delete Firestore notes with full whitespace preservation.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <div className="flex-1">
+                        <Label>Search notes</Label>
+                        <div className="relative mt-1">
+                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <Input
+                            className="pl-9"
+                            placeholder="Search by title, content, or note ID"
+                            value={noteSearch}
+                            onChange={(event) => setNoteSearch(event.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button type="button" variant="outline" onClick={loadNotes} disabled={isNotesLoading}>
+                          {isNotesLoading ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : null}
+                          Refresh notes
+                        </Button>
+                        <Button type="button" onClick={startCreatingNote}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          New note
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="hidden gap-4 md:grid md:grid-cols-[320px,1fr]">
+                      <div className="rounded-md border border-slate-200 dark:border-slate-800">
+                        <div className="max-h-[620px] overflow-y-auto p-2">
+                          {isNotesLoading ? (
+                            <div className="p-4 text-sm text-slate-500 dark:text-slate-400">Loading notes...</div>
+                          ) : notesLoadError ? (
+                            <div className="p-4 text-sm text-red-600 dark:text-red-400">
+                              Could not load notes. Try refreshing.
+                            </div>
+                          ) : filteredNotes.length === 0 ? (
+                            <div className="p-4 text-sm text-slate-500 dark:text-slate-400">
+                              No notes found.
+                            </div>
+                          ) : (
+                            filteredNotes.map((note) => (
+                              <button
+                                key={note.id}
+                                type="button"
+                                onClick={() => selectNoteForEditing(note)}
+                                className={`mb-2 w-full rounded-md border p-3 text-left transition ${
+                                  !isCreatingNote && selectedNoteId === note.id
+                                    ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-950/30'
+                                    : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900'
+                                }`}
+                              >
+                                <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                  {note.title || 'Untitled note'}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  Updated {formatDashboardTimestamp(note.updatedAt || note.createdAt)}
+                                </div>
+                                <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                                  {notePreviewText(note.text)}
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-md border border-slate-200 p-4 dark:border-slate-800">
+                        {isCreatingNote || selectedNote ? (
+                          <div className="space-y-4">
+                            <div>
+                              <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                                {noteForm.title || 'Untitled note'}
+                              </h2>
+                              {selectedNote && !isCreatingNote ? (
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  Created {formatDashboardTimestamp(selectedNote.createdAt)} | Last modified{' '}
+                                  {formatDashboardTimestamp(selectedNote.updatedAt || selectedNote.createdAt)}
+                                </p>
+                              ) : (
+                                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  New note draft
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <Label>Title</Label>
+                              <Input
+                                value={noteForm.title}
+                                onChange={(event) =>
+                                  setNoteForm((previous) => ({ ...previous, title: event.target.value }))
+                                }
+                                placeholder="Note title"
+                              />
+                            </div>
+                            <div>
+                              <Label>Text</Label>
+                              <textarea
+                                className="mt-1 min-h-[280px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-mono [tab-size:4] dark:border-slate-800 dark:bg-slate-950"
+                                value={noteForm.text}
+                                onChange={(event) =>
+                                  setNoteForm((previous) => ({ ...previous, text: event.target.value }))
+                                }
+                                placeholder="Write note text here. Tabs, newlines, and whitespace are preserved."
+                              />
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <Button onClick={handleSaveNote} disabled={isNoteSaving || isNoteDeleting}>
+                                {isNoteSaving ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : null}
+                                {isCreatingNote ? 'Create note' : 'Save changes'}
+                              </Button>
+                              {!isCreatingNote && selectedNote ? (
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  onClick={handleDeleteNote}
+                                  disabled={isNoteSaving || isNoteDeleting}
+                                >
+                                  {isNoteDeleting ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                  )}
+                                  Delete note
+                                </Button>
+                              ) : null}
+                            </div>
+
+                            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                              <Label>Preview (whitespace preserved)</Label>
+                              <pre className="mt-2 whitespace-pre-wrap break-words text-sm font-mono [tab-size:4] text-slate-800 dark:text-slate-100">
+                                {noteForm.text || 'No content yet.'}
+                              </pre>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex h-full min-h-[280px] items-center justify-center rounded-md border border-dashed border-slate-300 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                            Select a note from the list or create a new one.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 md:hidden">
+                      {notesMobileView === 'list' ? (
+                        <div className="space-y-2">
+                          {isNotesLoading ? (
+                            <div className="rounded-md border border-slate-200 p-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                              Loading notes...
+                            </div>
+                          ) : notesLoadError ? (
+                            <div className="rounded-md border border-red-200 p-4 text-sm text-red-600 dark:border-red-900 dark:text-red-400">
+                              Could not load notes. Tap refresh and try again.
+                            </div>
+                          ) : filteredNotes.length === 0 ? (
+                            <div className="rounded-md border border-slate-200 p-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                              No notes found.
+                            </div>
+                          ) : (
+                            filteredNotes.map((note) => (
+                              <button
+                                key={note.id}
+                                type="button"
+                                onClick={() => selectNoteForEditing(note)}
+                                className="w-full rounded-md border border-slate-200 p-3 text-left dark:border-slate-800"
+                              >
+                                <div className="truncate text-base font-semibold text-slate-900 dark:text-slate-100">
+                                  {note.title || 'Untitled note'}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                  {formatDashboardTimestamp(note.updatedAt || note.createdAt)}
+                                </div>
+                                <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                                  {notePreviewText(note.text, 110)}
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-4 rounded-md border border-slate-200 p-3 dark:border-slate-800">
+                          <Button type="button" variant="ghost" className="px-2" onClick={() => setNotesMobileView('list')}>
+                            <ArrowLeft className="mr-2 h-4 w-4" />
+                            Back to notes list
+                          </Button>
+
+                          <div>
+                            <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                              {noteForm.title || 'Untitled note'}
+                            </h2>
+                            {selectedNote && !isCreatingNote ? (
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                Created {formatDashboardTimestamp(selectedNote.createdAt)} | Last modified{' '}
+                                {formatDashboardTimestamp(selectedNote.updatedAt || selectedNote.createdAt)}
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">New note draft</p>
+                            )}
+                          </div>
+
+                          <div>
+                            <Label>Title</Label>
+                            <Input
+                              value={noteForm.title}
+                              onChange={(event) =>
+                                setNoteForm((previous) => ({ ...previous, title: event.target.value }))
+                              }
+                              placeholder="Note title"
+                            />
+                          </div>
+
+                          <div>
+                            <Label>Text</Label>
+                            <textarea
+                              className="mt-1 min-h-[220px] w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-mono [tab-size:4] dark:border-slate-800 dark:bg-slate-950"
+                              value={noteForm.text}
+                              onChange={(event) =>
+                                setNoteForm((previous) => ({ ...previous, text: event.target.value }))
+                              }
+                              placeholder="Write note text here. Tabs, newlines, and whitespace are preserved."
+                            />
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <Button onClick={handleSaveNote} disabled={isNoteSaving || isNoteDeleting}>
+                              {isNoteSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                              {isCreatingNote ? 'Create note' : 'Save changes'}
+                            </Button>
+                            {!isCreatingNote && selectedNote ? (
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                onClick={handleDeleteNote}
+                                disabled={isNoteSaving || isNoteDeleting}
+                              >
+                                {isNoteDeleting ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                )}
+                                Delete note
+                              </Button>
+                            ) : null}
+                          </div>
+
+                          <div className="rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                            <Label>Preview (whitespace preserved)</Label>
+                            <pre className="mt-2 whitespace-pre-wrap break-words text-sm font-mono [tab-size:4] text-slate-800 dark:text-slate-100">
+                              {noteForm.text || 'No content yet.'}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
