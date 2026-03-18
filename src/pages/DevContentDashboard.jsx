@@ -474,6 +474,129 @@ INPUT: Current Set = [INSERT SAMPLE QUESTION SET]
       Current Difficulty = [CURRENT DIFFICULTY]
       Target Difficulty = [TARGET DIFFICULTY]`;
 
+const QUIZ_DESCRIPTION_PROMPT_TEMPLATE = `Role
+You are an expert instructional designer and educational researcher specializing in cognitive load theory and curriculum development.
+
+Task
+Given the provided learning material (e.g., slides, notes, or text), analyze the content and generate a structured, multi-tier quiz blueprint that optimizes for learning, retention, and conceptual transfer.
+
+Autonomy Requirement (CRITICAL)
+
+Do NOT ask clarifying questions.
+
+Infer all structure directly from the material.
+
+If ambiguity exists, make the most pedagogically reasonable assumption.
+
+If the material is incomplete, still produce the best possible structured output.
+
+Design Framework
+Step 1 - Extract Conceptual Zones
+
+Identify 5-8 distinct conceptual zones from the material.
+
+Each zone must:
+
+Represent a coherent chunk of knowledge
+
+Be mutually distinct (minimal overlap)
+
+Be collectively exhaustive (cover the material)
+
+Tier 1 - Fundamentals (Decomposition)
+
+Create 1 quiz per conceptual zone
+
+Each quiz must:
+
+Cover 1-2 tightly related subtopics
+
+Focus on core definitions, mechanisms, or principles
+
+Include 6-8 questions (recommended)
+
+Tier 2 - Integration (Connection)
+
+Create 2-3 quizzes total
+
+Each quiz must:
+
+Combine 2-3 conceptual zones
+
+Emphasize:
+
+Relationships between concepts
+
+Multi-step reasoning
+
+Application scenarios
+
+Tier 3 - Capstone (Synthesis)
+
+Create 1 comprehensive quiz
+
+Must:
+
+Cover the entire material
+
+Emphasize deep understanding and transfer
+
+Constraints
+
+Maximum 3 major concepts per quiz
+
+Avoid vague or generic topic names (e.g., "Overview", "Miscellaneous")
+
+Focus topics must be:
+
+Specific
+
+Testable
+
+Derived from the material (not invented externally)
+
+Output Format (STRICT - DO NOT DEVIATE)
+subject_name: "<inferred subject name>"
+
+conceptual_zones:
+  - "<zone name>"
+  - "<zone name>"
+
+tier_1_quizzes:
+  - quiz_name: "<name>"
+    zone: "<corresponding conceptual zone>"
+    focus_topics: ["<specific subtopic>", "<specific subtopic>"]
+    estimated_questions: 6-8
+
+tier_2_quizzes:
+  - quiz_name: "<name>"
+    integrated_zones: ["<zone>", "<zone>"]
+    focus_topics: ["<applied or integrative task>", "<...>"]
+
+tier_3_capstone:
+  quiz_name: "<name>"
+  scope: "Comprehensive"
+  focus: ["<synthesis area>", "<...>"]
+Behavior Rules
+
+Do NOT generate actual questions.
+
+Do NOT paraphrase the material - extract structure from it.
+
+Ensure:
+
+Every Tier 1 quiz maps to exactly one conceptual zone
+
+Every Tier 2 quiz explicitly combines zones listed above
+
+Keep naming:
+
+Clear
+
+Consistent
+
+Instructionally meaningful`;
+
 const BULK_UPLOAD_TEMPLATE = '{\n  "questions": []\n}';
 
 const BULK_DEFAULTS = {
@@ -1605,6 +1728,22 @@ const groupedQuizzes = useMemo(() => {
       toast({
         title: 'Prompt Copied!',
         description: 'The generated prompt has been copied to your clipboard.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Copy failed',
+        description: 'Could not write to clipboard.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCopyQuizDescriptionPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(QUIZ_DESCRIPTION_PROMPT_TEMPLATE);
+      toast({
+        title: 'Prompt copied',
+        description: 'Quiz description prompt template copied to clipboard.',
       });
     } catch (err) {
       toast({
@@ -3332,6 +3471,18 @@ Return only the description text.`;
                               
                               {isPromptExpanded && (
                                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-3">
+                                   <div className="flex justify-end">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleCopyQuizDescriptionPrompt}
+                                        className="h-7 px-2 text-xs"
+                                      >
+                                        <Copy className="h-3 w-3 mr-1" />
+                                        Copy Quiz Description Prompt
+                                      </Button>
+                                   </div>
                                    <div className="flex items-center justify-between">
                                       <Label className="text-xs">Quiz Description / Source Text</Label>
                                       <Button type="button" variant="outline" size="sm" onClick={handlePastePromptInput} className="h-6 px-2 text-xs">
